@@ -6,7 +6,9 @@ import {
   LDEnv,
   HyperPlayRelease,
   PointsClaimReturn,
-  GenericApiResponse
+  GenericApiResponse,
+  Quest,
+  ConfirmClaimParams
 } from './../types'
 import { EventEmitter } from 'node:events'
 import { IpcMainEvent, OpenDialogOptions } from 'electron'
@@ -51,7 +53,9 @@ import type { SystemInformation } from 'backend/utils/systeminfo'
 import {
   MetaMaskInitMethod,
   ImportableBrowser,
-  MetaMaskImportOptions
+  MetaMaskImportOptions,
+  ClientUpdateStatuses,
+  HyperPlayAPI
 } from '@hyperplay/utils'
 
 /**
@@ -91,11 +95,12 @@ interface HyperPlaySyncIPCFunctions {
   toastCloseOnClick: (key: ToastKey) => void
   lockPopup: (lock: boolean) => void
   killOverlay: () => void
-  toggleOverlay: () => void
+  toggleOverlay: HyperPlayAPI['toggleOverlay']
   authConnected: () => void
-  goToGamePage: (appName: string) => void
+  goToGamePage: (gameId: string, action: GamePageActions) => void
   authDisconnected: () => void
   otp: (otp: string) => void
+  navigate: (route: string) => void
 }
 
 interface SyncIPCFunctions extends HyperPlaySyncIPCFunctions {
@@ -157,6 +162,8 @@ interface SyncIPCFunctions extends HyperPlaySyncIPCFunctions {
   'auth:accountNotConnected': () => void
   'auth:otpFinished': () => void
   focusMainWindow: () => void
+  openOnboarding: () => void
+  restartClient: () => void
 }
 
 interface RequestArguments {
@@ -223,7 +230,7 @@ interface HyperPlayAsyncIPCFunctions {
   changeMetricsOptInStatus: (
     newStatus: MetricsOptInStatus.optedIn | MetricsOptInStatus.optedOut
   ) => Promise<void>
-  addHyperplayGame: (gameId: string, addHyperplayGame: string) => Promise<void>
+  addHyperplayGame: (gameId: string, addHyperplayGame?: string) => Promise<void>
   sendRequest: (args: unknown[]) => Promise<unknown>
   sendAsyncRequest: (
     payload: JsonRpcRequest,
@@ -276,7 +283,11 @@ interface HyperPlayAsyncIPCFunctions {
   getQuests: (projectId?: string) => Promise<Quest[]>
   getQuest: (questId: number) => Promise<Quest>
   getUserPlayStreak: (questId: number) => Promise<UserPlayStreak>
-  getSteamGameMetadata: (gameId: number) => Promise<unknown>
+  getSteamGameMetadata: (gameId: number) => Promise<{
+    name?: string
+    capsule_image?: string
+  }>
+  confirmRewardClaim: (params: ConfirmClaimParams) => Promise<void>
   getHyperPlayListings: () => Promise<Record<string, HyperPlayRelease>>
   getQuestRewardSignature: (
     address: `0x${string}`,
@@ -287,6 +298,24 @@ interface HyperPlayAsyncIPCFunctions {
   claimQuestPointsReward: (rewardId: string) => Promise<PointsClaimReturn>
   completeExternalTask: (rewardId: string) => Promise<GenericApiResponse>
   resyncExternalTask: (rewardId: string) => Promise<GenericApiResponse>
+  getG7Credits: () => Promise<string>
+  getExternalTaskCredits: (rewardId: string) => Promise<string>
+  getPointsBalancesForProject: (
+    projectId: string
+  ) => Promise<{ pointsCollection: PointsCollection; balance: string }[]>
+  checkG7ConnectionStatus: () => Promise<boolean>
+  syncPlaySession: (appName: string, runner: Runner) => Promise<void>
+  getEpicListingUrl: (appName: string) => Promise<string>
+  importGameFolder: (gameFolder: string) => Promise<string>
+  syncPlayStreakWithExternalSource: (params: {
+    quest_id: number
+    signature: string
+  }) => Promise<GenericApiResponse>
+  getCSRFToken: () => Promise<string>
+  checkPendingSync: (params: {
+    wallet: string
+    questId: number
+  }) => Promise<boolean>
 }
 
 interface AsyncIPCFunctions extends HyperPlayAsyncIPCFunctions {
@@ -445,6 +474,14 @@ interface AsyncIPCFunctions extends HyperPlayAsyncIPCFunctions {
     appName: string
   ) => Promise<number | undefined>
   pauseCurrentDownload: () => Promise<void>
+  getQuestsForGame: (projectId: string) => Promise<Quest[]>
+  installSteamWindows: () => Promise<void>
+  isClientUpdating: () => Promise<ClientUpdateStatuses>
+  requestSIWE: () => Promise<{
+    message: string
+    signature: string
+    address: string
+  }>
 }
 
 // This is quite ugly & throws a lot of errors in a regular .ts file

@@ -175,6 +175,8 @@ export interface GameUpdateSuccess {
     game_title: string
     platform: ReturnType<typeof getPlatformName>
     platform_arch: InstallPlatform
+    version_from?: string
+    version_to?: string
   }
   sensitiveProperties?: never
 }
@@ -188,6 +190,55 @@ export interface GameUpdateFailed {
     game_title: string
     platform: ReturnType<typeof getPlatformName>
     platform_arch: InstallPlatform
+  }
+  sensitiveProperties?: never
+}
+
+export interface PatchingStarted {
+  event: 'Patching Started'
+  properties: {
+    game_name: string
+    game_title: string
+    platform: ReturnType<typeof getPlatformName>
+    platform_arch: InstallPlatform
+  }
+  sensitiveProperties?: never
+}
+
+export interface PatchingSuccess {
+  event: 'Patching Success'
+  properties: {
+    game_name: string
+    game_title: string
+    platform: ReturnType<typeof getPlatformName>
+    platform_arch: InstallPlatform
+  }
+  sensitiveProperties?: never
+}
+
+export interface PatchingFailed {
+  event: 'Patching Failed'
+  properties: {
+    game_name: string
+    error: string
+    game_title: string
+    platform: ReturnType<typeof getPlatformName>
+    platform_arch: InstallPlatform
+  }
+  sensitiveProperties?: never
+}
+
+export interface PatchingTooSlow {
+  event: 'Patching Too Slow'
+  properties: {
+    game_name: string
+    game_title: string
+    platform: ReturnType<typeof getPlatformName>
+    platform_arch: InstallPlatform
+    old_game_version: string
+    new_game_version: string
+    est_time_to_patch_sec: string
+    est_time_to_install_sec: string
   }
   sensitiveProperties?: never
 }
@@ -296,6 +347,83 @@ export interface HyperPlaySummonQuestSucceeded {
   sensitiveProperties?: never
 }
 
+// fired when a quest card or quest log item is clicked and the quest details are shown
+export interface QuestViewed {
+  event: 'Quest Viewed'
+  properties: {
+    quest: {
+      id: string
+    }
+  }
+  sensitiveProperties?: never
+}
+
+// TODO: refactor and filter out NULL values in _trackEventPrivate so we can have null values in the type
+// and so we can reuse the same type in src/common/types
+interface Reward {
+  id: number
+  reward_type: 'ERC20' | 'ERC721' | 'ERC1155' | 'POINTS' | 'EXTERNAL-TASKS'
+  name: string
+  contract_address: `0x${string}`
+  /* eslint-disable-next-line */
+  token_ids: { amount_per_user: string; token_id: number }[]
+  image_url: string
+}
+
+type RewardPropertiesType = Reward & { quest_id: string }
+
+export interface RewardClaimStarted {
+  event: 'Reward Claim Started'
+  properties: RewardPropertiesType
+  sensitiveProperties?: never
+}
+
+export interface RewardClaimSuccess {
+  event: 'Reward Claim Success'
+  properties: RewardPropertiesType
+  sensitiveProperties?: never
+}
+
+export interface RewardClaimError {
+  event: 'Reward Claim Error'
+  properties: RewardPropertiesType
+  sensitiveProperties?: never
+}
+
+export interface ClientUpdateNotified {
+  event: 'Client Update Notified'
+  properties: {
+    currentVersion: string
+    newVersion: string
+  }
+  sensitiveProperties?: never
+}
+
+export interface ClientUpdateError {
+  event: 'Client Update Error'
+  properties: {
+    currentVersion: string
+    newVersion: string
+    error: string
+  }
+  sensitiveProperties?: never
+}
+
+export interface ClientUpdateDownloaded {
+  event: 'Client Update Downloaded'
+  properties: {
+    currentVersion: string
+    newVersion: string
+  }
+  sensitiveProperties?: never
+}
+
+export interface AccountDropdownPortfolioClicked {
+  event: 'Portfolio Clicked in Account Dropdown'
+  properties?: never
+  sensitiveProperties?: never
+}
+
 export type PossibleMetricPayloads =
   | MetricsOptIn
   | MetricsOptOut
@@ -327,5 +455,17 @@ export type PossibleMetricPayloads =
   | HyperPlayLaunched
   | HyperPlaySummonQuestFailed
   | HyperPlaySummonQuestSucceeded
+  | QuestViewed
+  | RewardClaimStarted
+  | RewardClaimSuccess
+  | RewardClaimError
+  | ClientUpdateNotified
+  | ClientUpdateError
+  | ClientUpdateDownloaded
+  | PatchingStarted
+  | PatchingSuccess
+  | PatchingFailed
+  | PatchingTooSlow
+  | AccountDropdownPortfolioClicked
 
 export type PossibleMetricEventNames = PossibleMetricPayloads['event']

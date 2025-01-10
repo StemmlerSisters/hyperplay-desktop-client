@@ -15,7 +15,6 @@ import {
   gamesConfigPath,
   installPath,
   userHome,
-  isFlatpak,
   isMac,
   isWindows,
   getSteamCompatFolder,
@@ -27,12 +26,9 @@ import { logError, logInfo, LogPrefix } from './logger/logger'
 import {
   getCrossover,
   getDefaultWine,
-  getSystemGamingPortingToolkitWine,
   getGamingPortingToolkitWine,
   getLinuxWineSet,
-  getWhisky,
-  getWineOnMac,
-  getWineskinWine
+  getWineOnMac
 } from './utils/compatibility_layers'
 
 import { backendEvents } from './backend_events'
@@ -140,20 +136,10 @@ abstract class GlobalConfig {
     }
 
     const getGPTKWine = await getGamingPortingToolkitWine()
-    const getSystemGPTK = await getSystemGamingPortingToolkitWine()
     const crossover = await getCrossover()
     const wineOnMac = await getWineOnMac()
-    const wineskinWine = await getWineskinWine()
-    const whiskyWine = await getWhisky()
 
-    return new Set([
-      ...getGPTKWine,
-      ...getSystemGPTK,
-      ...crossover,
-      ...wineOnMac,
-      ...wineskinWine,
-      ...whiskyWine
-    ])
+    return new Set([...getGPTKWine, ...crossover, ...wineOnMac])
   }
 
   /**
@@ -309,7 +295,7 @@ class GlobalConfigV0 extends GlobalConfig {
       autoInstallDxvkNvapi: false,
       addSteamShortcuts: false,
       preferSystemLibs: false,
-      checkForUpdatesOnStartup: !isFlatpak,
+      checkForUpdatesOnStartup: !isLinux,
       autoUpdateGames: true,
       customWinePaths: isWindows ? null : [],
       defaultInstallPath: installPath,
@@ -342,7 +328,7 @@ class GlobalConfigV0 extends GlobalConfig {
     } as AppSettings
   }
 
-  public setSetting(key: string, value: unknown) {
+  public setSetting(key: keyof AppSettings, value: never) {
     const config = this.getSettings()
     const configStoreSettings = configStore.get_nodefault('settings') || config
     configStore.set('settings', { ...configStoreSettings, [key]: value })

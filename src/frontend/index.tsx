@@ -27,6 +27,7 @@ import ViewManager from './ViewManager'
 import SentryHandler from './SentryHandler'
 import { asyncWithLDProvider } from 'launchdarkly-react-client-sdk'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { WagmiProvider } from 'wagmi'
 import { config } from './config'
 
@@ -38,7 +39,6 @@ window.addEventListener('error', (ev: ErrorEvent) => {
 
 const Backend = new HttpApi(null, {
   addPath: 'build/locales/{{lng}}/{{ns}}',
-  allowMultiLoading: false,
   loadPath: 'locales/{{lng}}/{{ns}}.json'
 })
 
@@ -47,6 +47,8 @@ initShortcuts()
 
 const storage: Storage = window.localStorage
 storage.removeItem('nonAvailableGames')
+
+const showReactQueryDevtools = import.meta.env.VITE_SHOW_RQ_DEVTOOLS === 'true'
 
 const languageCode: string =
   configStore.get_nodefault('language') ?? storage.getItem('language') ?? 'en'
@@ -119,9 +121,23 @@ const root = createRoot(container!) // createRoot(container!) if you use TypeScr
 
 const renderApp = async () => {
   const ldConfig = await window.api.getLDEnvConfig()
+  const appVersion = await window.api.getAppVersion()
+  const platform = await window.api.getPlatform()
+
+  const context = {
+    ...ldConfig.ldUser,
+    appVersion,
+    languageCode,
+    platform
+  }
+
+  window.api.logInfo(
+    `Setting up LaunchDarkly with context: ${JSON.stringify(context, null, 2)}`
+  )
+
   const LDProvider = await asyncWithLDProvider({
     clientSideID: ldConfig.envId,
-    context: ldConfig.ldUser
+    context
   })
 
   root.render(
@@ -141,6 +157,9 @@ const renderApp = async () => {
               </GlobalState>
             </HyperPlayDesignProvider>
           </LDProvider>
+          {showReactQueryDevtools && (
+            <ReactQueryDevtools initialIsOpen={false} />
+          )}
         </QueryClientProvider>
       </WagmiProvider>
     </React.StrictMode>

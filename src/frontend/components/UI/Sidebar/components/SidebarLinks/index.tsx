@@ -18,7 +18,8 @@ const tooltipProps: Partial<TooltipProps> = {
   position: 'right',
   withArrow: true,
   className: 'Tooltip menu',
-  arrowSize: 10
+  arrowSize: 10,
+  zIndex: 1001
 }
 
 export default observer(function SidebarLinks() {
@@ -140,7 +141,7 @@ export default observer(function SidebarLinks() {
         )}
         {SHOW_QUESTS ? (
           <div className="sidebarLinkGradientWrapper">
-            <Tooltip {...tooltipProps} label="Quests">
+            <Tooltip {...tooltipProps} label={t('sidebar.quests', 'Quests')}>
               <NavLink
                 data-testid="quests"
                 className={({ isActive }) =>
@@ -174,7 +175,7 @@ export default observer(function SidebarLinks() {
           </Tooltip>
         </div>
         <div className="sidebarLinkGradientWrapper">
-          <Tooltip {...tooltipProps} label="Settings">
+          <Tooltip {...tooltipProps} label={t('sidebar.settings', 'Settings')}>
             <NavLink
               data-testid="settings"
               className={({ isActive }) =>
@@ -210,22 +211,22 @@ export default observer(function SidebarLinks() {
           className="sidebarLinkGradientWrapper "
           onClick={() => handleExternalLink(window.api.openTwitterLink)}
         >
-          <Tooltip {...tooltipProps} label="Twitter">
+          <Tooltip {...tooltipProps} label="X">
             <div className="Sidebar__item">
               <button>
-                <Images.Twitter fill={sidebarSvgUnselectedFill} />
+                <Images.XLogo fill={sidebarSvgUnselectedFill} />
               </button>
             </div>
           </Tooltip>
         </div>
         <div className="sidebarLinkGradientWrapper">
-          <Tooltip {...tooltipProps} label="Wiki">
+          <Tooltip {...tooltipProps} label={t('sidebar.docs', 'Docs')}>
             <NavLink
-              data-testid="wiki"
+              data-testid="Docs"
               className={({ isActive }) =>
                 classNames('Sidebar__item', { active: isActive })
               }
-              to={{ pathname: '/wiki' }}
+              to={{ pathname: '/docs' }}
             >
               <Images.Page fill={sidebarSvgUnselectedFill} />
             </NavLink>

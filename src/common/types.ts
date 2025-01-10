@@ -12,6 +12,9 @@ import {
 import { Channel, ContractMetadata } from '@valist/sdk/dist/typesApi'
 import { IconDefinition } from '@fortawesome/free-solid-svg-icons'
 import { DropdownItemType } from '@hyperplay/ui'
+export type { Quest } from '@hyperplay/utils'
+
+import { MetaMaskInpageProvider } from '@metamask/providers'
 
 export type {
   Listing as HyperPlayRelease,
@@ -75,14 +78,13 @@ export type LDUser = {
 export type LDEnv = {
   envId: string
   ldUser: LDUser
+  appVersion: string
 }
 
 export interface AppSettings extends GameSettings {
   addDesktopShortcuts: boolean
   addStartMenuShortcuts: boolean
   addSteamShortcuts: boolean
-  altGogdlBin: string
-  altLegendaryBin: string
   autoUpdateGames: boolean
   checkForUpdatesOnStartup: boolean
   autoLaunchHyperPlay: boolean
@@ -133,6 +135,8 @@ export interface ExtraInfo {
 
 export type GameConfigVersion = 'auto' | 'v0' | 'v0.1'
 
+export type GameType = 'native' | 'mod' | 'browser'
+
 export interface GameInfo {
   runner: 'legendary' | 'gog' | 'hyperplay' | 'sideload'
   store_url?: string
@@ -177,6 +181,7 @@ export interface GameInfo {
   accessCodesCache?: Record<string, string>
   siweValues?: SiweValues
   networks?: ContractMetadata[]
+  type?: GameType
 }
 
 export interface GameSettings {
@@ -235,6 +240,7 @@ export type Status =
   | 'paused'
   | 'preparing'
   | 'distributables'
+  | 'patching'
 
 export interface GameStatus {
   appName: string
@@ -254,6 +260,7 @@ export interface InstallProgress {
   downSpeed?: number
   diskSpeed?: number
   file?: string
+  totalSize?: number
 }
 
 export interface InstalledInfo {
@@ -304,6 +311,9 @@ export interface InstallArgs {
   accessCode?: string
   updateOnly?: boolean
   siweValues?: SiweValues
+  modOptions?: {
+    zipFilePath: string
+  }
 }
 
 export interface InstallParams extends InstallArgs {
@@ -311,6 +321,7 @@ export interface InstallParams extends InstallArgs {
   gameInfo: GameInfo
   runner: Runner
   size?: string
+  channelName?: string
 }
 
 export interface UpdateArgs {
@@ -395,7 +406,9 @@ export interface LaunchPreperationResult {
 
 export interface RpcClient {
   updatePresence(d: unknown): void
+
   reply(user: unknown, response: unknown): void
+
   disconnect(): void
 }
 
@@ -482,7 +495,7 @@ export type RecentGame = {
   title: string
 }
 
-export type HiddenGame = RecentGame
+export type HiddenGame = { appName: string }
 
 export type FavouriteGame = HiddenGame
 
@@ -584,6 +597,7 @@ export interface DMQueueElement {
   startTime: number
   endTime: number
   status?: DMStatus
+  channel?: string
 }
 
 type ProtonVerb =
@@ -861,6 +875,7 @@ export interface GetIndividualAchievementsOptions extends PlayerOptions {
   page: number
   pageSize: number
 }
+
 export interface AchievementsStats {
   newAchievements: number
   mintedAchievements: number
@@ -878,6 +893,7 @@ export type Filter =
   | 'alphabeticalAscending'
   | 'alphabeticalDescending'
   | 'sortByInstalled'
+
 export interface FilterItem extends DropdownItemType {
   id?: Filter
 }
@@ -910,35 +926,20 @@ export interface Reward {
   name: string
   contract_address: `0x${string}`
   decimals: number | null
-  /* eslint-disable-next-line */
-  token_ids: { amount_per_user: string; token_id: number }[]
+  token_ids: {
+    amount_per_user: string
+    token_id: number
+    numClaimsLeft: string
+  }[]
   image_url: string
-}
-
-export interface Quest {
-  id: number
-  project_id: string
-  name: string
-  type: 'REPUTATIONAL-AIRDROP' | 'PLAYSTREAK'
-  status: string
-  description: string
-  rewards?: Reward[]
-  /* eslint-disable-next-line */
-  deposit_contracts: any[]
-  eligibility?: {
-    completion_threshold?: number
-    steam_games: { id: string }[]
-    play_streak: {
-      required_playstreak_in_days: number
-      minimum_session_time_in_seconds: number
-    }
-  }
+  numClaimsLeft: string
 }
 
 export interface RewardClaimSignature {
   signature: `0x${string}`
   nonce: string
   expiration: number
+  tokenIds: number[]
 }
 
 export interface DepositContract {
@@ -959,9 +960,29 @@ export interface PointsClaimReturn {
   success?: string
 }
 
+export interface ConfirmClaimParams {
+  transactionHash: string
+  signature: string
+}
+
 export interface UserPlayStreak {
   current_playstreak_in_days: number
   completed_counter: number
   accumulated_playtime_today_in_seconds: number
   last_play_session_completed_datetime: string
+}
+
+export interface PointsCollection {
+  id: string
+  name: string
+  symbol: string
+  image: string
+}
+
+export type { GamePageActions } from '@hyperplay/utils'
+
+declare global {
+  interface Window {
+    ethereum: MetaMaskInpageProvider
+  }
 }

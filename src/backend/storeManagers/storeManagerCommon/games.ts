@@ -26,7 +26,12 @@ import { access, chmod } from 'fs/promises'
 import shlex from 'shlex'
 import { showDialogBoxModalAuto } from '../../dialog/dialog'
 import { createAbortController } from '../../utils/aborthandler/aborthandler'
-import { app, BrowserWindow } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  BrowserWindowConstructorOptions,
+  WindowOpenHandlerResponse
+} from 'electron'
 import { gameManagerMap } from '../index'
 const buildDir = resolve(__dirname, '../../build')
 import { domainsAreEqual } from 'common/utils'
@@ -34,6 +39,7 @@ import { PROVIDERS } from 'common/types/proxy-types'
 import { getExecutableAndArgs } from 'backend/utils'
 import { hpApi } from 'backend/utils/hyperplay_api'
 import { getHpOverlay } from 'backend/overlay'
+import { launchingGameShouldOpenOverlay } from 'backend/utils/shouldOpenOverlay'
 
 export async function getAppSettings(appName: string): Promise<GameSettings> {
   return (
@@ -46,9 +52,86 @@ export function logFileLocation(appName: string) {
   return join(gamesConfigPath, `${appName}-lastPlay.log`)
 }
 
+const openBlankWindow = (options: BrowserWindowConstructorOptions) => {
+  options.show = false
+  const browserGame = new BrowserWindow(options)
+
+  browserGame.webContents.on('will-navigate', async (...params) => {
+    import('@hyperplay/extension-importer').then((extensionImporter) => {
+      extensionImporter?.windowOpenHandlerForExtension(
+        params[0].url,
+        browserGame.webContents,
+        hpApi
+      )
+      browserGame.close()
+    })
+  })
+
+  return browserGame.webContents
+}
+
+function handleUrlOpenForWebContents(
+  url: string,
+  contents: Electron.WebContents,
+  /* eslint-disable-next-line */
+  extensionImporter: any
+): WindowOpenHandlerResponse {
+  const urlToOpen = new URL(url)
+  const protocol = urlToOpen.protocol
+  const urlParent = contents.getURL()
+  const parentURL = new URL(urlParent)
+  const appName = parentURL.searchParams.get('appName')
+  const runner = parentURL.searchParams.get('runner') as Runner | null
+
+  if (url === 'about:blank') {
+    return { action: 'allow', createWindow: openBlankWindow }
+  }
+
+  if (
+    ['https:', 'http:'].includes(protocol) &&
+    domainsAreEqual(urlToOpen, parentURL) &&
+    appName &&
+    runner
+  ) {
+    openNewBrowserGameWindow(url, appName, runner)
+    return { action: 'deny' }
+  }
+  return (
+    extensionImporter?.windowOpenHandlerForExtension(url, contents, hpApi) ?? {
+      action: 'deny'
+    }
+  )
+}
+
+const openNewBrowserGameWindowListener = async (
+  ev: Electron.Event,
+  contents: Electron.WebContents
+) => {
+  try {
+    const extensionImporter = await import('@hyperplay/extension-importer')
+
+    // Check for a webview
+    if (contents.getType() === 'webview') {
+      /* this overrides the handler set in extension-importer but falls back to its behavior */
+      contents.setWindowOpenHandler((handler) => {
+        const { url } = handler
+        return handleUrlOpenForWebContents(url, contents, extensionImporter)
+      })
+    }
+  } catch (err) {
+    logError(
+      `Error setting up window open handler for webview web contents`,
+      LogPrefix.HyperPlay
+    )
+  }
+}
+
+app.on('web-contents-created', openNewBrowserGameWindowListener)
+
 const openNewBrowserGameWindow = async (
   browserUrl: string,
-  gameInfo: GameInfo
+  appName: string,
+  runner: Runner
 ): Promise<boolean> => {
   let connectedProvider = PROVIDERS.UNCONNECTED
   /* eslint-disable-next-line */
@@ -56,11 +139,11 @@ const openNewBrowserGameWindow = async (
   try {
     const proxyServer = await import('@hyperplay/providers')
     connectedProvider = proxyServer.connectedProvider
-    extensionImporter = await import('@hyperplay/extension-importer')
   } catch (err) {
     logError(`Error importing proxy server ${err}`, LogPrefix.HyperPlay)
   }
   const hpOverlay = await getHpOverlay()
+
   return new Promise((res) => {
     const browserGame = new BrowserWindow({
       icon: icon,
@@ -105,22 +188,19 @@ const openNewBrowserGameWindow = async (
     browserGame.setIgnoreMouseEvents(false)
     browserGame.setMinimizable(true)
 
-    const abortController = createAbortController(gameInfo.app_name)
+    const abortController = createAbortController(appName)
     abortController.signal.addEventListener('abort', () => {
       browserGame.close()
     })
 
     const url = !app.isPackaged
-      ? `http://localhost:5173?view=BrowserGame&appName=${gameInfo.app_name}&runner=${gameInfo.runner}`
+      ? `http://localhost:5173?view=BrowserGame&appName=${appName}&runner=${runner}`
       : `file://${path.join(
           buildDir,
           `./index.html`
-        )}?view=BrowserGame&appName=${gameInfo.app_name}&runner=${
-          gameInfo.runner
-        }`
+        )}?view=BrowserGame&appName=${appName}&runner=${runner}`
 
-    const urlParent = new URL(browserUrl)
-    const openNewBroswerGameWindowListener = (
+    const interceptFullscreenKeyInput = (
       ev: Electron.Event,
       contents: Electron.WebContents
     ) => {
@@ -131,30 +211,9 @@ const openNewBrowserGameWindow = async (
           'before-input-event',
           checkContentsUrlBeforeHandling(contents)
         )
-
-        /* this overrides the handler set in extension-importer but falls back to its behavior */
-        contents.setWindowOpenHandler(({ url }) => {
-          const urlToOpen = new URL(url)
-          const protocol = urlToOpen.protocol
-
-          if (
-            ['https:', 'http:'].includes(protocol) &&
-            domainsAreEqual(urlToOpen, urlParent)
-          ) {
-            openNewBrowserGameWindow(url, gameInfo)
-            return { action: 'deny' }
-          }
-          return (
-            extensionImporter?.windowOpenHandlerForExtension(
-              url,
-              contents,
-              hpApi
-            ) ?? { action: 'deny' }
-          )
-        })
       }
     }
-    app.on('web-contents-created', openNewBroswerGameWindowListener)
+    app.on('web-contents-created', interceptFullscreenKeyInput)
 
     browserGame.loadURL(url)
     // this is electron's suggested way to prevent visual flash
@@ -195,10 +254,6 @@ const openNewBrowserGameWindow = async (
 
     browserGame.on('close', () => {
       res(true)
-      app.removeListener(
-        'web-contents-created',
-        openNewBroswerGameWindowListener
-      )
     })
   })
 }
@@ -261,7 +316,12 @@ export async function launchGame(
 
     if (webGameUrl) browserUrl = webGameUrl
 
-    if (browserUrl) return openNewBrowserGameWindow(browserUrl, gameInfo)
+    if (browserUrl)
+      return openNewBrowserGameWindow(
+        browserUrl,
+        gameInfo.app_name,
+        gameInfo.runner
+      )
 
     throw `Could not launch web game for ${appName}`
   }
@@ -321,7 +381,13 @@ export async function launchGame(
         )
         // On Mac, it gives an error when changing the permissions of the file inside the app bundle. But we need it for other executables like scripts.
         if (isLinux || (isMac && !exeOnly.endsWith('.app'))) {
-          await chmod(exeOnly, 0o775)
+          try {
+            await chmod(exeOnly, 0o775)
+          } catch (error) {
+            logWarning(
+              'Was not possible to change permission to this file, maybe the owner is Root?'
+            )
+          }
         }
       }
 
@@ -360,10 +426,7 @@ export async function launchGame(
       LogPrefix.Backend
     )
 
-    const shouldOpenOverlay =
-      gameInfo &&
-      (gameInfo.runner === 'hyperplay' ||
-        (gameInfo.runner === 'sideload' && gameInfo.web3?.supported))
+    const { shouldOpenOverlay } = await launchingGameShouldOpenOverlay(gameInfo)
 
     await runWineCommand({
       commandParts: [exeOnly, combinedArgs ?? ''],

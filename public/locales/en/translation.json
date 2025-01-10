@@ -1,4 +1,5 @@
 {
+    "16GB of RAM": "16GB of RAM",
     "accessibility": {
         "actions_font_family_no_default": "Actions Font Family (Default: ",
         "all_tiles_in_color": "Show all game tiles in color",
@@ -26,7 +27,9 @@
         "status": "Status",
         "title": "This game includes anticheat software"
     },
+    "Apple Silicon M1 or above": "Apple Silicon M1 or above",
     "back_to_game": "Back to game",
+    "Be aware that not all games will work, and even if they do, they may not run as expected": "Be aware that not all games will work, and even if they do, they may not run as expected.",
     "box": {
         "cache-cleared": {
             "message": "HyperPlay cache cleared.",
@@ -34,8 +37,6 @@
         },
         "choose": "Choose",
         "choose-egs-prefix": "Choose Prefix where EGS is installed",
-        "choose-gogdl-binary": "Select GOGDL Binary (needs restart)",
-        "choose-legendary-binary": "Select Legendary binary",
         "customWine": "Select the Wine or Proton binary",
         "default-install-path": "Choose Default Install Path",
         "default-steam-path": "Steam path.",
@@ -55,6 +56,10 @@
                 "message": "The CrossOver bottle \"{{bottle_name}}\" does not exist, can't launch!",
                 "title": "CrossOver bottle not found"
             },
+            "delete-files": {
+                "body": "Error removing extracted folder {{path}}. Please remove it manually. \n                {{paragraph}} \n                {{error}}",
+                "title": "Error removing extracted folder"
+            },
             "diskspace": {
                 "message": "Not enough available disk space",
                 "title": "No Space"
@@ -72,6 +77,11 @@
             },
             "launchAborted": "Launch aborted",
             "moving": "Error Moving Game {{error}}",
+            "steam": {
+                "error": "Steam executable not found. Installation was probably canceled by user or failed on Steam side.",
+                "message": "Steam installation failed! Please read the instructions carefully and try again! {{paragraph}} {{error}}",
+                "title": "Steam error"
+            },
             "title": "Error",
             "ubisoft-connect": {
                 "message": "Installation of Ubisoft Connect in the game prefix failed. Check our wiki page at https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/wiki/How-to-install-Ubisoft-Connect-on-Linux-and-Mac to install it maunally.",
@@ -88,12 +98,8 @@
         },
         "info": {
             "update": {
-                "changelog": "Open changelog",
-                "detail": "Do you want to download the update in the background?",
-                "message": "There is a new Version available!",
-                "message-finished": "Do you want to restart HyperPlay now?",
-                "title": "HyperPlay Games Launcher",
-                "title-finished": "Update Finished"
+                "appUpdated": "HyperPlay was updated",
+                "appUpdated-message": "HyperPlay was updated. Do you want to update and restart HyperPlay now?"
             }
         },
         "no": "NO",
@@ -173,11 +179,13 @@
         "continue": "Continue",
         "download": "Download",
         "go_to_library": "Go to Library",
+        "install": "Install",
         "sync": "Sync",
         "syncing": "Syncing",
         "unsync": "Unsync",
         "update": "Update"
     },
+    "Cancel Installation": "Cancel Installation",
     "controller": {
         "hints": {
             "back": "Back",
@@ -226,6 +234,7 @@
         },
         "title_dm": "Download Manager"
     },
+    "Downloading": "Downloading {{percent}}%",
     "email_subscription": {
         "subtitle": "You’re now a part of our community, and we’re excited to share valuable updates and insights with you.",
         "title": "Thank you for subscribing!"
@@ -322,8 +331,10 @@
     "hyperplay": {
         "accesscodes": {
             "error": {
+                "licenseUndefined": "Could not validate access code. Please check your internet access or firewall settings.",
                 "validation": "Access code is invalid"
             },
+            "placeholder": "Enter access code",
             "requirescode": "This game update requires an access code.",
             "success": {
                 "validation": "Success! Access code is valid"
@@ -345,39 +356,42 @@
             "profile": "Profile"
         },
         "buttons": {
-            "agree": "I agree",
-            "noThanks": "No Thanks"
+            "primaryButton": "I Agree",
+            "secondaryButton": "No, Thanks"
         },
         "changeWallet": "Swap wallet account",
+        "compatibilityLayer": "Compatibility Layer (Beta)",
         "connectWallet": "Connect wallet",
         "copyUrl": "Copy URL",
         "currentWallet": "Current wallet",
-        "discordApp": "Discord",
+        "discordAppLink": "Discord Community.",
         "folder": "Folder",
         "gamecard": {
             "distributables": "Installing Distributables...",
             "extracting": "Extracting...",
             "installed": "Ready to play",
             "installing": "Downloading...",
+            "patching": "Patching...",
             "paused": "Paused"
         },
         "linkSteamAccountCta": "Go to Steam sign in",
         "linkSteamAccountDescription": "Sign in to Steam to link your HyperPlay account.",
         "linkSteamAccountTitle": "Link Steam Account",
         "logOut": "Log out",
-        "misc": "Never",
         "onboarding": {
             "analytics": {
-                "anonymized": "Send anonymized click & game interaction;",
                 "body": "HyperPlay would like to gather usage data to better understand how our users interact with the application. This information helps us understand how you use the app and lets us make HyperPlay even better for you.",
+                "bulletOne": "Always allow you to opt-out",
+                "bulletTwo": "Send anonymized click & game interaction",
                 "hyperplayWill": "HyperPlay will:",
-                "neverCollectIP": " collect your full IP address;",
-                "neverCollectPersonal": " collect keys, addresses, balances, hashes, or any personal information;",
-                "neverSellData": " sell data for profit. Ever!",
-                "optOut": "Always allow you to opt-out via Settings;",
+                "paragraphOne": "HyperPlay would like to gather usage data to better understand how our users interact with the application. \n           This lets us make HyperPlay even better for you.",
                 "privacyCaption": "This data is aggregated and is therefore anonymous for the purposes of General Data Protection Regulation (EU) 2016/679. For more information in relation to our privacy practices, please see our ",
-                "privacyPolicyHere": "Privacy Policy here.",
-                "title": "Help Us improve HyperPlay!"
+                "privacyPolicy": "Privacy Policy.",
+                "text": {
+                    "externalLink": "Learn More",
+                    "title": "We’ve updated our Privacy Policy"
+                },
+                "titleOne": "Help Us Improve HyperPlay!"
             },
             "connectAgain": "Connect again",
             "connectionCanceled": {
@@ -388,7 +402,6 @@
                 "description": "Your wallet is connected. You are ready to game.",
                 "title": "Wallet connected!"
             },
-            "terms": "Terms of Service.",
             "walletSelection": {
                 "pleaseConnect": "Please connect your wallet, or download the Metamask mobile-app to get\n        started:",
                 "screens": {
@@ -428,26 +441,30 @@
             },
             "welcome": {
                 "text": {
-                    "bugs": "Please note that HyperPlay is a public alpha. Many features are still\n          in development, and there will be bugs.",
-                    "communityCTA_1": "We'd love your feedback and to have you join us in our",
-                    "communityCTA_2": "community. Together, let's shape the future of gaming!",
-                    "construction": "HyperPlay is under construction.",
-                    "description": "HyperPlay is a game launcher and game store aggregator from the\n          future. With HyperPlay, you can carry your wallet, tokens, and assets\n          into every game. HyperPlay supports the entire library of the Epic\n          Store, GOG, and our own HyperPlay store. By using HyperPlay, you agree\n          to our"
+                    "bulletPointFive": "Run Windows games on macOS, Linux, and SteamDeck using our\n              advanced",
+                    "bulletPointFour": "Install Steam (Windows version) on macOS with one easy click",
+                    "bulletPointOne": "Access a vast collection of 100+ on-chain enabled games",
+                    "bulletPointThree": "Play Epic and GOG games directly through HyperPlay",
+                    "bulletPointTwo": "Earn tokens, NFTs, and off-chain rewards by completing Quests",
+                    "lastParagraph": "Currently in Beta, we highly value your feedback and \n            encourage you to report any issues or suggestions in our",
+                    "paragraphOne": "At HyperPlay, we’re building the next-generation game store \n            for the future of gaming.",
+                    "paragraphThr": "Seamlessly bring your wallet, tokens, \n           and assets into every game while accessing \n           the extensive libraries of the Epic Store, \n           GOG, and our own HyperPlay Store-all in one place.",
+                    "TitleList": "With HyperPlay you can:"
                 },
-                "title": "Welcome to HyperPlay Early Access!"
+                "titleIntro": "Welcome to HyperPlay!"
             }
         },
         "otp": "One Time Passcode",
-        "publicAlpha": "Public Alpha",
         "Sync": "Sync",
         "syncing": "Syncing...",
         "turnAnalyticsOff": "Turn off",
         "turnAnalyticsOn": "Turn on",
+        "viewFullscreen": "View fullscreen",
         "viewItem": "View {{item}}",
-        "viewMyAccount": "View my account",
         "viewPortfolio": "View portfolio"
     },
     "HyperPlay": "",
+    "HyperPlay will notify you once the installation is done;": "HyperPlay will notify you once the installation is done;",
     "hyperplayOverlay": {
         "chainRequest": {
             "CONFIRMED": "Custom network added",
@@ -485,13 +502,21 @@
             "INITIATED": "Add custom token request pending"
         }
     },
+    "If you wish to continue, please be patient since it can take a few minutes to finish depending on your internet connection and system configuration": "If you wish to continue, please be patient since it can take a few minutes to finish depending on your internet connection and system configuration.",
+    "import-game-folder": {
+        "cta": "Import Game Folder",
+        "dialog": {
+            "title": "Select Game Folder to Import"
+        },
+        "error": "There was an error during import. Please see the logs for more details.",
+        "label": "Import Game Folder",
+        "placeholder": "Choose the game folder to import",
+        "success": "Successfully imported games!"
+    },
     "importGameErrorMessage": "Not a valid game folder, importing game is not possible",
     "importGameErrorMessageExecutable": "Game Executable not found, importing game is not possible",
     "importGameErrorTitle": "Import Game Error",
     "info": {
-        "hyperplay": {
-            "version": "HyperPlay Version"
-        },
         "save-sync": {
             "searching": "Trying to detect the correct save folder (click to cancel)"
         },
@@ -512,6 +537,19 @@
             "message": "Wine uses what is called a WINEPREFIX to encapsulate Windows applications. This prefix contains the Wine configuration files and a reproduction of the file hierarchy of C: (the main disk on a Windows OS). In this reproduction of the C: drive, your game save files and dependencies installed via winetricks are stored."
         }
     },
+    "install": {
+        "path": "Select Install Path"
+    },
+    "Install Steam": "Install Steam",
+    "Installing": "Installing",
+    "Installing Steam": "Installing Steam...",
+    "installModal": {
+        "loginRequired": "Login Required",
+        "loginRequiredMessage": "You need to be logged into HyperPlay to enter your access code and install this game. ",
+        "loginRequiredMessageUpdate": "You need to be logged into HyperPlay to enter your access code and update this game. "
+    },
+    "Launch Steam": "Launch Steam",
+    "Launching Steam": "Launching Steam...",
     "library": {
         "alphabeticalAZ": "Alphabetical A-Z",
         "alphabeticalZA": "Alphabetical Z-A",
@@ -530,14 +568,70 @@
         "message": "Login with your platform. You can login to more than one platform at the same time.",
         "old-mac": "Your macOS version is {{version}}. macOS 12 or newer is required to log in."
     },
+    "macOS 14": {
+        "0 or above": "macOS 14.0 or above"
+    },
     "message": {
         "sync": "Sync Complete",
         "unsync": "Unsync Complete"
+    },
+    "mod": {
+        "baseGame": {
+            "cancel": {
+                "body": "Base game extraction canceled",
+                "title": "Canceled Extraction"
+            },
+            "installed": {
+                "body": "Mod will be applied to base game",
+                "title": "Base Game Installed"
+            },
+            "installing": {
+                "body": "Extracting base game files",
+                "title": "Installing Base Game"
+            }
+        },
+        "instructions": {
+            "zip": {
+                "path": "Select Base Game File Location",
+                "placeholder": "Select Zip File"
+            }
+        }
+    },
+    "mods": {
+        "instructions": {
+            "selectZip": "",
+            "step1": {
+                "description": "This game is a mod for World of Warcraft: Wrath of the Lich King (3.3.5a). In order to play this mod, players must own a copy of World of Warcraft 3.3.5a. {{newline}} {{newline}} HyperPlay does not host World of Warcraft. Players who own World of Warcraft can obtain the version needed from the following sources:",
+                "link1": "Link 1",
+                "link2": "Link 2 (Magnet Link)",
+                "subtitle": "Download World of Warcraft 3.3.5a",
+                "title": "Step 1"
+            },
+            "step2": {
+                "subtitle1": "Select the downloaded 3.3.5a zip file",
+                "title": "Step 2"
+            },
+            "step3": {
+                "description": "Please choose the folder where World of Warcraft: Wrath of the Lich King (3.3.5a) should be installed.",
+                "subtitle": "Select Installation Folder",
+                "title": "Step 3"
+            },
+            "step4": {
+                "description": "Enter the access code to proceed with installing the game.",
+                "subtitle": "Access Code",
+                "title": "Step 4"
+            },
+            "title": "Mod Instructions"
+        }
     },
     "notification": {
         "wine-download": {
             "message": "Setting up the default compatibility layer",
             "title": "Compatibility Layer"
+        },
+        "wine-download-failed": {
+            "message": "Failed to setup the default compatibility layer",
+            "title": "Error"
         }
     },
     "notify": {
@@ -592,7 +686,6 @@
         "offline-retry-in": "Offline. Retrying in {{seconds}} seconds.",
         "retrying": "Retrying"
     },
-    "Open": "Open",
     "options": {
         "advanced": {
             "key": "Variable Name",
@@ -625,36 +718,70 @@
         }
     },
     "other": {
-        "gogdl-version": "GOGDL Version: ",
-        "legendary-version": "Legendary Version: ",
         "weblate": "Help Translate HyperPlay."
     },
     "Other": "Other",
     "overlay": {
-        "EXTERNAL_WALLET_CONNECTED": "You are connected to HyperPlay with an external wallet."
+        "comingSoon": "Coming Soon",
+        "EXTERNAL_WALLET_CONNECTED": "You are connected to HyperPlay with an external wallet.",
+        "links": {
+            "bridge": "Bridge",
+            "buy": "Buy",
+            "marketplace": "Marketplace",
+            "portfolio": "Portfolio",
+            "sell": "Sell",
+            "swap": "Swap"
+        },
+        "WALLET_DISCONNECTED": "You do not have a wallet connected to HyperPlay."
     },
     "placeholder": {
-        "alt-gogdl-bin": "Using built-in GOGDL binary...",
-        "alt-legendary-bin": "Using built-in Legendary binary...",
         "custom_themes_path": "Select the path to look for custom CSS files",
         "dxvkfpsvalue": "Positive integer value (e.g. 30, 60, ...)",
         "egs-prefix": "Prefix where EGS is installed",
         "prefered_language": "2-char code (i.e.: \"en\" or \"fr\")"
     },
     "Please connect to the internet to access the stores": "",
+    "Please Wait": "Please Wait",
     "please-wait": "Please wait...",
     "profile": "Profile",
     "progress": "Progress",
     "quest": {
         "active": "Active",
         "associatedGames": "Associated games",
-        "claimAll": "Claim all",
+        "claim": "Claim",
         "claimed": "Claimed",
+        "claimFailed": "Claim failed",
+        "claimFailedMessage": "Please try once more. If it still doesn't work, create a Discord support ticket.",
+        "claimWarning": {
+            "body": "<bold>IMPORTANT:</bold> Please ensure that you are allocating enough gas on the {{networkName}} network for the transaction to be successfully confirmed <bold>within 7 days.</bold>",
+            "body2": "Otherwise, the Quest Reward <bold>will expire and will no longer be claimable.</bold>",
+            "cancel": "Cancel",
+            "confirm": "Confirm"
+        },
         "connectSteamAccount": "Connect Steam account",
-        "errorMessage": "There was an error with the transaction.",
+        "createDiscordTicket": "Create Discord Ticket",
+        "g7Numclaimed": "Total Claimed G7 Credits",
         "linkAccount": "Link your Steam account to check eligibility.",
         "needMoreAchievements": "You need to have completed {{percent}}% of the achievements in one of these games.",
-        "Play": "Play",
+        "noG7ConnectionClaim": "You need to have a Game7 account linked to {{email}} to claim your rewards.",
+        "noG7ConnectionSync": {
+            "message": "You need to have a Game7 account linked to {{email}} to resync your tasks.",
+            "title": "No G7 account linked"
+        },
+        "notEligible": {
+            "message": "You have not completed the required play streak days and can not claim your reward at this time.",
+            "title": "Not eligible yet"
+        },
+        "notEnoughBalance": {
+            "title": "Low balance"
+        },
+        "notEnoughGas": {
+            "message": "Insufficient wallet balance to claim your reward due to gas fees. Try a different wallet or replenish this one before retrying."
+        },
+        "notSignedIn": {
+            "message": "You need to be signed in to claim your reward.",
+            "title": "Not signed in"
+        },
         "playstreak": {
             "dayResets": "Day resets:",
             "days": "days",
@@ -663,48 +790,76 @@
             "playToStart": "Play this game to start your streak!",
             "progressTowardsStreak": "progress towards today's streak.",
             "streakCompleted": "Streak completed! Claim your rewards now.",
-            "streakProgress": "Streak Progress"
+            "streakProgress": "Streak Progress",
+            "sync": "Sync Progress",
+            "syncSuccess": "Progress synced"
         },
         "points": "Points",
+        "pointsClaimed": "Points Claimed",
+        "questAvailable": "Quest available!",
+        "questComplete": "Quest complete!",
         "quests": "Quests",
         "readyForClaim": "Ready for claim",
         "reputation": "Reputation",
         "reward": "Reward",
-        "signIn": "Sign in",
+        "rewardClaimed": "Claim successful",
+        "signIn": "Log in",
         "sync": "Sync",
+        "toClaimReward": "to claim your reward.",
+        "toSeeDetails": "to see details.",
         "type": {
             "playstreak": "Play Streak",
             "reputation": "Reputation"
         },
-        "View Game": "View Game"
+        "youHaveClaimed": "You have claimed {{totalRewards}} reward{{plural}}."
     },
     "quests": {
+        "g7CreditsModal": {
+            "description": "Dive into HyperPlay's top games with exciting Play Streak Challenges. Each activity encourages you to engage with a different game, showcasing the best of web3 gaming. Your playtime matters!",
+            "title": "Earn Game7 Credits"
+        },
+        "noneFound": {
+            "message": "There were no quests found.",
+            "title": "No Quests Found."
+        },
         "playstreak": {
             "signInWarning": {
                 "client": "You are currently not logged in, play streak progress will not be tracked. Please login to HyperPlay via the top-right dropdown to track progress.",
                 "overlay": "You are currently not logged in, play streak progress will not be tracked. Please exit the game and login to HyperPlay via the top-right dropdown to track progress."
             }
         },
-        "quests": "Quests"
+        "quests": "Quests",
+        "search": "Search",
+        "viewAllQuests": {
+            "title": "View All Quests"
+        }
     },
     "queue": {
         "label": {
             "canceled": "Canceled",
-            "empty": "Nothing to download",
+            "clear": "Clear List",
+            "empty": {
+                "finished": "Nothing downloaded",
+                "queue": "Nothing to download"
+            },
+            "launch": "Launch Game",
             "pause": "Pause download",
             "remove": "Remove from Downloads",
-            "resume": "Resume download"
+            "resume": "Resume download",
+            "retry-install": "Retry Install",
+            "retry-update": "Retry Update",
+            "stop": "Stop Download",
+            "timeElapsed": "Time Elapsed: {{elapsed}}"
         }
     },
     "Recent": "Played Recently",
+    "Recommended specs for a better experience": "Recommended specs for a better experience",
     "search": "Search for Games",
     "setting": {
         "adddesktopshortcuts": "Add desktop shortcuts automatically",
         "addgamestoapplications": "Add games to Applications automatically",
         "addgamestostartmenu": "Add games to start menu automatically",
         "addgamestosteam": "Add games to Steam automatically",
-        "alt-gogdl-bin": "Choose an Alternative GOGDL Binary to use",
-        "alt-legendary-bin": "Choose an Alternative Legendary Binary",
         "autodxvk": "Auto Install/Update DXVK on Prefix",
         "autodxvknvapi": "Auto Install/Update DXVK-NVAPI on Prefix",
         "autoLaunchHyperPlay": "Auto Launch HyperPlay",
@@ -883,8 +1038,11 @@
     "Settings": "Settings",
     "sidebar": {
         "achievements": "Achievements",
+        "docs": "Docs",
         "downloadManager": "Download Manager",
         "library": "Library",
+        "quests": "Quests",
+        "settings": "Settings",
         "store": "Store"
     },
     "sideload": {
@@ -895,6 +1053,14 @@
         "installing": "Installing",
         "logging": "Logging In...",
         "processing": "Processing files, please wait"
+    },
+    "Steam Installation": "",
+    "steam-install": {
+        "compatibility-layer-not-available": "Compatibility layer not available. Please install one from \"Settings > Wine Manager\" first.",
+        "error-message": "An error occurred while installing Steam. Please try again.",
+        "launch-tooltip": "Launch Steam using the HyperPlay Compatibility Layer",
+        "success-message": "Steam has been installed. You can now launch it from the Library.",
+        "tooltip": "This will install the Windows version of Steam and it will run using a HyperPlay Compatibility Layer. \n\n    Some games especially older titles, newer 3D games, or those with anti-cheat software may not work properly. \n\n    The Recommended specs are a Mac with Apple Silicon CPU (M1 or above) and at least 16GB of RAM."
     },
     "store": "Epic Store",
     "title": {
@@ -927,6 +1093,12 @@
         "manageaccounts": "Manage Accounts",
         "manageStore": "Manage stores",
         "quit": "Quit"
+    },
+    "wallet": {
+        "portfolio": {
+            "onlyExtension": "MetaMask Portfolio is only available when connected with MetaMask."
+        },
+        "unsupported": "Unsupported Wallet Connection"
     },
     "webview": {
         "controls": {

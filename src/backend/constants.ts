@@ -72,6 +72,9 @@ const cachedUbisoftInstallerPath = join(
   'UbisoftConnectInstaller.exe'
 )
 
+const ipdtPatcher = join(toolsPath, 'ipdt')
+const ipdtManifestsPath = join(appConfigFolder, 'manifests')
+
 const { currentLogFile, lastLogFile, legendaryLogFile, gogdlLogFile } =
   createNewLogFileAndClearOldOnes()
 
@@ -93,8 +96,7 @@ const supportURL = 'https://github.com/G7DAO/HyperPlay/blob/main/Support.md'
 const discordLink = 'https://discord.gg/hyperplay'
 const twitterLink = 'https://twitter.com/HyperPlayGaming'
 const wikiLink = 'https://github.com/G7DAO/HyperPlay/wiki'
-const weblateUrl =
-  'https://hosted.weblate.org/projects/hyperplay-games-launcher'
+const weblateUrl = 'https://hosted.weblate.org/projects/hyperplay-client/'
 const wineprefixFAQ = 'https://wiki.winehq.org/FAQ#Wineprefixes'
 const hyperplaySite = 'https://docs.hyperplay.xyz/faq'
 const customThemesWikiLink =
@@ -119,6 +121,8 @@ export function getValistListingApiUrl(projectId: string) {
     (qaToken !== '' ? '?status=pending' : '')
   )
 }
+
+export const patchApiUrl = `${DEV_PORTAL_URL}api/v1/patches`
 
 export function getValidateLicenseKeysApiUrl() {
   return `${DEV_PORTAL_URL}api/v1/license_keys/validate`
@@ -203,20 +207,31 @@ const execOptions = {
   shell: getShell()
 }
 
-const defaultFolders = [gamesConfigPath, iconsFolder, imagesCachePath]
+const defaultFolders = [
+  gamesConfigPath,
+  iconsFolder,
+  imagesCachePath,
+  toolsPath,
+  ipdtManifestsPath
+]
 
-const necessaryFoldersByPlatform = {
+const necessaryFoldersByPlatform: {
+  [key in 'win32' | 'linux' | 'darwin']: string[]
+} = {
   win32: [...defaultFolders],
-  linux: [...defaultFolders, toolsPath],
-  darwin: [...defaultFolders, toolsPath]
+  linux: [...defaultFolders],
+  darwin: [...defaultFolders]
 }
 
 export function createNecessaryFolders() {
-  necessaryFoldersByPlatform[platform()].forEach((folder: string) => {
-    if (!existsSync(folder)) {
-      mkdirSync(folder)
-    }
-  })
+  const platformKey = platform() as 'win32' | 'linux' | 'darwin'
+  if (necessaryFoldersByPlatform[platformKey]) {
+    necessaryFoldersByPlatform[platformKey].forEach((folder: string) => {
+      if (!existsSync(folder)) {
+        mkdirSync(folder)
+      }
+    })
+  }
 }
 
 const onboardLocalStore = new TypeCheckedStoreBackend('onboardingStore', {
@@ -283,5 +298,7 @@ export {
   valistListingsApiUrl,
   mainReleaseChannelName,
   vulkanHelperBin,
-  cachedUbisoftInstallerPath
+  cachedUbisoftInstallerPath,
+  ipdtManifestsPath,
+  ipdtPatcher
 }

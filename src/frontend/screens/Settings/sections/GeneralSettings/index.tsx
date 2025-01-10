@@ -6,7 +6,6 @@ import {
   CheckUpdatesOnStartup,
   DefaultInstallPath,
   DefaultSteamPath,
-  DisableController,
   EgsSettings,
   HyperPlayAnalytics,
   LibraryTopSection,
@@ -18,7 +17,6 @@ import {
   UseDarkTrayIcon,
   WinePrefixesBasePath
 } from '../../components'
-import AppVersion from 'frontend/components/UI/AppVersion'
 import AutoLaunchHyperPlay from '../../components/AutoLaunchHyperPlay'
 
 export default function GeneralSettings() {
@@ -26,8 +24,6 @@ export default function GeneralSettings() {
 
   return (
     <>
-      <AppVersion />
-
       <div className="settingSubheader settingsSectionHeader title">
         {t('settings.navbar.general')}
       </div>
@@ -56,7 +52,9 @@ export default function GeneralSettings() {
 
       <Shortcuts />
 
-      <DisableController />
+      {/* 
+      disabled until we fix the controller navigation in hyperplay
+      <DisableController /> */}
 
       <HyperPlayAnalytics />
 

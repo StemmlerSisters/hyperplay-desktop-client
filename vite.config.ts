@@ -39,6 +39,10 @@ try {
     {
       find: '@hyperplay/overlay',
       replacement: join(__dirname, 'src', 'empty.js')
+    },
+    {
+      find: '@hyperplay/patcher',
+      replacement: join(__dirname, 'src', 'empty.js')
     }
   )
 }
@@ -52,14 +56,6 @@ const preloads = [
   'src/backend/webview_style_preload.ts',
   'src/backend/auth_provider_preload.ts'
 ]
-
-// only set alias if the extension-provider optional package was added
-try {
-  statSync(join(__dirname, 'node_modules', '@hyperplay', 'extension-provider'))
-  preloads.push(
-    'node_modules/@hyperplay/extension-provider/src/extensionPreload.ts'
-  )
-} catch (err) {}
 
 export default defineConfig(({ mode }) => ({
   main: {

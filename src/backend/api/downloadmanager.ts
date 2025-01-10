@@ -49,12 +49,14 @@ export const updateGame = (gameInfo: GameInfo, accessCode?: string) => {
       path: install_path!,
       platformToInstall: platform!,
       accessCode,
-      siweValues
+      siweValues,
+      channelName: gameInfo.install.channelName
     },
     type: 'update',
     addToQueueTime: Date.now(),
     endTime: 0,
-    startTime: 0
+    startTime: 0,
+    channel: gameInfo.install.channelName
   }
 
   ipcRenderer.invoke('addToDMQueue', dmQueueElement)
@@ -95,3 +97,7 @@ export const resumeCurrentDownload = () =>
 
 export const pauseCurrentDownload = async () =>
   ipcRenderer.invoke('pauseCurrentDownload')
+
+export const addHyperplayGame = async (projectId: string) => {
+  await ipcRenderer.invoke('addHyperplayGame', projectId)
+}

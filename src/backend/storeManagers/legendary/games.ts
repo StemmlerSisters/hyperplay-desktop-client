@@ -11,8 +11,7 @@ import {
   GameInfo,
   InstallArgs,
   InstallPlatform,
-  InstallProgress,
-  WineCommandArgs
+  InstallProgress
 } from 'common/types'
 import { GameConfig } from '../../game_config'
 import { GlobalConfig } from '../../config'
@@ -42,15 +41,20 @@ import {
   isFlatpak,
   isCLINoGui
 } from '../../constants'
-import { logError, logInfo, LogPrefix, logsDisabled } from '../../logger/logger'
+import {
+  logError,
+  logInfo,
+  LogPrefix,
+  logsDisabled,
+  logWarning
+} from '../../logger/logger'
 import {
   prepareLaunch,
   prepareWineLaunch,
   setupEnvVars,
   setupWrappers,
   launchCleanup,
-  getRunnerCallWithoutCredentials,
-  runWineCommand as runWineCommandUtil
+  getRunnerCallWithoutCredentials
 } from '../../launcher'
 import {
   addShortcuts as addShortcutsUtil,
@@ -299,7 +303,14 @@ export async function getExtraInfo(appName: string): Promise<ExtraInfo> {
 
   // if the API doesn't work, try graphql
   if (!extraData) {
-    extraData = await getExtraFromGraphql(namespace, slug)
+    try {
+      extraData = await getExtraFromGraphql(namespace, slug)
+    } catch (error) {
+      logWarning(
+        `Error hitting the EpicGraphQL API for ${title}`,
+        LogPrefix.Legendary
+      )
+    }
   }
 
   // if we have data, store it and return
@@ -307,7 +318,6 @@ export async function getExtraInfo(appName: string): Promise<ExtraInfo> {
     gameInfoStore.set(namespace, extraData)
     return extraData
   } else {
-    logError('Error Getting Info from Epic API', LogPrefix.Legendary)
     return {
       about: {
         description: '',
@@ -992,7 +1002,7 @@ export async function pause(appName: string) {
   return stop(appName)
 }
 
-export function isGameAvailable(appName: string) {
+export async function isGameAvailable(appName: string) {
   const info = getGameInfo(appName)
   if (info && info.is_installed) {
     if (info.install.install_path && existsSync(info.install.install_path!)) {
@@ -1002,27 +1012,4 @@ export function isGameAvailable(appName: string) {
     }
   }
   return false
-}
-
-export async function runWineCommandOnGame(
-  appName: string,
-  { commandParts, wait = false, protonVerb, startFolder }: WineCommandArgs
-): Promise<ExecResult> {
-  if (isNative(appName)) {
-    logError('runWineCommand called on native game!', LogPrefix.Legendary)
-    return { stdout: '', stderr: '' }
-  }
-
-  const { folder_name, install } = getGameInfo(appName)
-  const gameSettings = await getSettings(appName)
-
-  return runWineCommandUtil({
-    gameSettings,
-    gameInstallPath: install.install_path,
-    installFolderName: folder_name,
-    commandParts,
-    wait,
-    protonVerb,
-    startFolder
-  })
 }

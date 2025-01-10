@@ -6,7 +6,8 @@ import {
   DMQueueElement,
   DownloadManagerState,
   GameInfo,
-  HyperPlayInstallInfo
+  HyperPlayInstallInfo,
+  GamePageActions
 } from 'common/types'
 import { CachedImage, SvgButton } from 'frontend/components/UI'
 import {
@@ -26,7 +27,7 @@ import libraryState from 'frontend/state/libraryState'
 import { hasStatus } from 'frontend/hooks/hasStatus'
 import { Images } from '@hyperplay/ui'
 import styles from './index.module.scss'
-const { PauseIcon, PlayIcon, XCircle, DownloadIcon } = Images
+const { PauseIcon, PlayIcon, XCircle, DownloadIcon, Refresh } = Images
 
 type Props = {
   element?: DMQueueElement
@@ -34,15 +35,16 @@ type Props = {
   state?: DownloadManagerState
 }
 
-const options: Intl.DateTimeFormatOptions = {
-  hour: 'numeric',
-  minute: 'numeric'
-}
-
 function convertToTime(time: number) {
   const date = time ? new Date(time) : new Date()
-  const hour = new Intl.DateTimeFormat(undefined, options).format(date)
-  return { hour, fullDate: date.toLocaleString() }
+  const fullDate = new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric'
+  }).format(date)
+  return { fullDate }
 }
 
 type InstallInfo =
@@ -85,7 +87,8 @@ const DownloadManagerItem = observer(({ element, current, state }: Props) => {
     path,
     gameInfo: DmGameInfo,
     size,
-    platformToInstall
+    platformToInstall,
+    channelName
   } = params
 
   const [gameInfo, setGameInfo] = useState(DmGameInfo)
@@ -99,11 +102,12 @@ const DownloadManagerItem = observer(({ element, current, state }: Props) => {
     const getNewInfo = async () => {
       const newInfo = (await getGameInfo(appName, runner)) as GameInfo
 
-      if (size?.includes('?') && !installInfo) {
+      if (!installInfo) {
         const installInfo = await getInstallInfo(
           appName,
           runner,
-          platformToInstall
+          platformToInstall,
+          channelName
         )
         setInstallInfo(installInfo)
       }
@@ -113,7 +117,7 @@ const DownloadManagerItem = observer(({ element, current, state }: Props) => {
       }
     }
     getNewInfo()
-  }, [element])
+  }, [element, current, state])
 
   const {
     art_cover,
@@ -121,26 +125,37 @@ const DownloadManagerItem = observer(({ element, current, state }: Props) => {
     install: { is_dlc }
   } = gameInfo || {}
 
-  const [progress] = hasProgress(appName)
+  const { progress } = hasProgress(appName)
   const { status } = element
   const finished = status === 'done'
   const canceled = status === 'error' || (status === 'abort' && !current)
   const isExtracting = gameProgressStatus === 'extracting'
+  const isUpdate = type === 'update'
+  const isPatching = gameProgressStatus === 'patching'
 
-  const goToGamePage = () => {
+  const goToGamePage = (action?: GamePageActions) => {
     if (is_dlc) {
       return
     }
     return navigate(`/gamepage/${runner}/${appName}`, {
-      state: { fromDM: true, gameInfo: gameInfo }
+      state: { fromDM: true, gameInfo: gameInfo, action }
     })
   }
 
   // using one element for the different states so it doesn't
   // lose focus from the button when using a game controller
-  const handleMainActionClick = () => {
+  const handleMainActionClick = async () => {
+    let action: GamePageActions | undefined = 'launch'
+    if (!finished) {
+      if (isUpdate) {
+        action = 'update'
+      } else {
+        action = 'install'
+      }
+    }
+
     if (finished || canceled) {
-      return goToGamePage()
+      return goToGamePage(action)
     }
 
     // gameInfo must be defined in order to get folder name for stop installation modal
@@ -168,6 +183,9 @@ const DownloadManagerItem = observer(({ element, current, state }: Props) => {
     }
 
     if (canceled) {
+      if (isUpdate) {
+        return <Refresh className={styles.downloadIcon} />
+      }
       return <DownloadIcon className={styles.downloadIcon} />
     }
 
@@ -177,7 +195,9 @@ const DownloadManagerItem = observer(({ element, current, state }: Props) => {
   const secondaryActionIcon = () => {
     if (state === 'paused') {
       return <PlayIcon className={styles.playIcon} />
-    } else if (state === 'running') {
+    }
+
+    if (state === 'running' && !isPatching) {
       return <PauseIcon className={styles.pauseIcon} />
     }
 
@@ -197,11 +217,18 @@ const DownloadManagerItem = observer(({ element, current, state }: Props) => {
   const mainIconTitle = () => {
     const { status } = element
     if (status === 'done' || status === 'error') {
-      return t('Open')
+      return t('queue.label.launch', 'Launch Game')
+    }
+
+    if (canceled) {
+      if (isUpdate) {
+        return t('queue.label.retry-update', 'Retry Update')
+      }
+      return t('queue.label.retry-install', 'Retry Install')
     }
 
     return current
-      ? t('button.cancel', 'Cancel')
+      ? t('queue.label.stop', 'Stop Download')
       : t('queue.label.remove', 'Remove from Downloads')
   }
 
@@ -242,7 +269,15 @@ const DownloadManagerItem = observer(({ element, current, state }: Props) => {
     update: t2('download-manager.install-type.update', 'Update')
   }
 
-  const { hour, fullDate } = getTime()
+  const { fullDate } = getTime()
+  const downloadsize =
+    progress.totalSize || installInfo?.manifest.download_size || 0
+
+  // calculate download time
+  const downloadTime = (current ? Date.now() : endTime) - startTime
+  const downloadTimeInMinutes = Math.floor(downloadTime / 60000)
+  const downloadTimeInSeconds = Math.floor((downloadTime % 60000) / 1000)
+  const downloadTimeFormatted = `${downloadTimeInMinutes}m ${downloadTimeInSeconds}s`
 
   return (
     <>
@@ -270,14 +305,18 @@ const DownloadManagerItem = observer(({ element, current, state }: Props) => {
           <span className="titleSize">
             {title}
             <span title={path}>
-              {size?.includes('?')
-                ? fileSize(Number(installInfo?.manifest.download_size) || 0)
-                : size}
+              {size?.includes('?') ? fileSize(Number(downloadsize)) : size}
               {canceled ? ` (${t('queue.label.canceled', 'Canceled')})` : ''}
             </span>
           </span>
         </td>
-        <td title={fullDate}>{hour}</td>
+        <td
+          title={t('queue.label.timeElapsed', 'Time Elapsed: {{elapsed}}', {
+            elapsed: downloadTimeFormatted
+          })}
+        >
+          {fullDate}
+        </td>
         <td>{translatedTypes[type]}</td>
         <td>{getStoreName(runner, t2('Other'))}</td>
         <td>

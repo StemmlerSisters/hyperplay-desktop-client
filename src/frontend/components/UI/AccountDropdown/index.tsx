@@ -84,7 +84,7 @@ const WalletDropdown: React.FC = observer(() => {
         {showMetaMaskExtensionLinks && (
           <>
             <NavigationMenuItem
-              label={t('hyperplay.viewMyAccount', `View my account`)}
+              label={t('hyperplay.viewFullscreen', `View fullscreen`)}
               to={'/metamaskHome'}
               showMetaMaskExtensionLinks={showMetaMaskExtensionLinks}
             ></NavigationMenuItem>
@@ -113,6 +113,11 @@ const WalletDropdown: React.FC = observer(() => {
                 !showWalletConnectedLinks
                   ? 'topElementWalletDropdown'
                   : undefined
+              }
+              onClick={async () =>
+                window.api.trackEvent({
+                  event: 'Portfolio Clicked in Account Dropdown'
+                })
               }
             >
               <div className={`body ${styles.itemContents}`}>
