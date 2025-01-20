@@ -26,6 +26,7 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+yarn.lock
 .eslintcache
 package-lock.json
 
@@ -37,12 +38,7 @@ flatpak/build
 vite-plugin-electron.log
 .tool-versions
 .env
-# This could be required if you need to add your own .nmprc token for copy it inside a container
-.npmrc
 
-# Yarn Berry support
-# these can be reconfigured if we ever want to adopt yarn berry
-.yarn/
 
 flathub/update-flathub.js
 xyz.hyperplay.HyperPlay
@@ -52,3 +48,12 @@ xyz.hyperplay.HyperPlay
 /public/extensions/resetExecutables/resetExtension-macos
 /public/extensions/resetExecutables/resetExtension.exe
 /public/extensions/resetExecutables/resetExtension
+electron.vite.config..*
+
+electron.vite.config.*.mjs
+
+.MMSDK_cached_chainId
+.MMSDK_cached_address
+
+# Patching
+blockstore

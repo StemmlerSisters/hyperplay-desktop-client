@@ -9,12 +9,18 @@ import {
   LicenseConfigValidateResult,
   ChannelReleaseMeta,
   SiweValues,
-  UpdateArgs,
-  WineCommandArgs
+  UpdateArgs
 } from '../../../common/types'
+import { generateID } from '@valist/sdk'
 import { hpLibraryStore } from './electronStore'
 import { sendFrontendMessage, getMainWindow } from 'backend/main_window'
-import { LogPrefix, logError, logInfo, logWarning } from 'backend/logger/logger'
+import {
+  LogPrefix,
+  logDebug,
+  logError,
+  logInfo,
+  logWarning
+} from 'backend/logger/logger'
 import {
   ExtractZipService,
   ExtractZipProgressResponse
@@ -31,15 +37,21 @@ import {
   isMac,
   isWindows,
   isLinux,
-  getValidateLicenseKeysApiUrl
+  getValidateLicenseKeysApiUrl,
+  ipdtPatcher,
+  toolsPath,
+  ipdtManifestsPath
 } from 'backend/constants'
 import {
   downloadFile,
   spawnAsync,
   killPattern,
   shutdownWine,
+  getExecutableAndArgs,
+  calculateProgress,
   calculateEta,
-  getExecutableAndArgs
+  getFileSize,
+  getPlatformName
 } from 'backend/utils'
 import { notify, showDialogBoxModalAuto } from 'backend/dialog/dialog'
 import path, { dirname, join } from 'path'
@@ -49,8 +61,10 @@ import {
   deleteAbortController
 } from 'backend/utils/aborthandler/aborthandler'
 import {
+  getIPDTManifestUrl,
   handleArchAndPlatform,
   handlePlatformReversed,
+  runModPatcher,
   sanitizeVersion
 } from './utils'
 import { getSettings as getSettingsSideload } from 'backend/storeManagers/sideload/games'
@@ -68,14 +82,26 @@ import { PlatformsMetaInterface } from '@valist/sdk/dist/typesShared'
 import { Channel } from '@valist/sdk/dist/typesApi'
 import { DownloadItem, dialog } from 'electron'
 import { waitForItemToDownload } from 'backend/utils/downloadFile/download_file'
-import { cancelQueueExtraction } from 'backend/downloadmanager/downloadqueue'
+import {
+  cancelQueueExtraction,
+  getFirstQueueElement,
+  updateQueueElementParam
+} from 'backend/downloadmanager/downloadqueue'
 import { captureException } from '@sentry/electron'
 import Store from 'electron-store'
 import i18next from 'i18next'
-import { gameManagerMap } from '..'
-import { runWineCommand } from 'backend/launcher'
-import { DEV_PORTAL_URL, valistBaseApiUrlv1 } from 'common/constants'
+import { DEV_PORTAL_URL } from 'common/constants'
 import getPartitionCookies from 'backend/utils/get_partition_cookies'
+import { prepareBaseGameForModding } from 'backend/ipcHandlers/mods'
+import { runWineCommandOnGame } from 'backend/utils/compatibility_layers'
+
+import { chmod, writeFile } from 'fs/promises'
+import { trackEvent } from 'backend/metrics/metrics'
+import { getFlag } from 'backend/flags/flags'
+import { ipfsGateway } from 'backend/vite_constants'
+import { GlobalConfig } from 'backend/config'
+import { PatchingError } from './types'
+import { SiweMessage } from 'siwe'
 
 interface ProgressDownloadingItem {
   DownloadItem: DownloadItem
@@ -88,20 +114,32 @@ interface ProgressDownloadingItem {
 }
 
 const inProgressDownloadsMap: Map<string, ProgressDownloadingItem> = new Map()
-const inProgressExtractionsMap: Map<string, ExtractZipService> = new Map()
+export const inProgressExtractionsMap: Map<string, ExtractZipService> =
+  new Map()
 
 export async function getSettings(appName: string): Promise<GameSettings> {
   return getSettingsSideload(appName)
 }
 
-export const isGameAvailable = (appName: string) => {
+export const isGameAvailable = async (appName: string) => {
   const hpGameInfo = getGameInfo(appName)
   if (hpGameInfo && hpGameInfo.install.platform === 'web') {
     return true
   }
 
   if (hpGameInfo.install && hpGameInfo.install.executable) {
-    const { executable } = getExecutableAndArgs(hpGameInfo.install.executable)
+    let { executable } = getExecutableAndArgs(hpGameInfo.install.executable)
+    const { targetExe } = await getSettings(appName)
+
+    if (targetExe) {
+      executable = targetExe
+    }
+
+    // on linux and mac replace backslashes with forward slashes on executable
+    if (!isWindows) {
+      executable = executable.replace(/\\/g, '/')
+    }
+
     return existsSync(executable)
   }
   return false
@@ -141,9 +179,6 @@ export async function stop(appName: string): Promise<void> {
   } = gameInfo
 
   if (executable) {
-    const split = executable.split('/')
-    const exe = split[split.length - 1]
-    killPattern(exe)
     if (!isNative(appName)) {
       const gameSettings = await getSettings(appName)
       shutdownWine(gameSettings)
@@ -251,8 +286,18 @@ export async function importGame(
   const channel = gameInfo.channels![
     installInfo.manifest.channelName!
   ] as Channel
-  const mainExe =
-    channel.release_meta.platforms[installInfo.manifest.platform].executable
+  // Accessing the platform data with type assertion
+  const platformKey = installInfo.manifest
+    .platform as keyof PlatformsMetaInterface
+  const platformData = channel.release_meta.platforms[platformKey]
+  if (!platformData || !platformData.executable) {
+    logError(
+      `Platform data not found for ${appName} in importGame`,
+      LogPrefix.HyperPlay
+    )
+    return { stderr: '', stdout: '' }
+  }
+  const mainExe = platformData.executable
   const executable = path.join(pathName, mainExe)
 
   if (!existsSync(executable)) {
@@ -283,35 +328,12 @@ export async function importGame(
   gameInLibrary.is_installed = true
   hpLibraryStore.set('games', currentLibrary)
 
-  sendFrontendMessage('refreshLibrary')
+  sendFrontendMessage('refreshLibrary', 'hyperplay')
 
   // delete current manifest file
   rmSync(path.join(pathName, `${appName}.json`))
   writeManifestFile(appName, gameInLibrary.install)
   return { stderr: '', stdout: '' }
-}
-
-export async function runWineCommandOnGame(
-  runner: string,
-  appName: string,
-  { commandParts, wait = false, protonVerb, startFolder }: WineCommandArgs
-): Promise<ExecResult> {
-  if (isNative(appName)) {
-    logError('runWineCommand called on native game!', LogPrefix.Gog)
-    return { stdout: '', stderr: '' }
-  }
-  const { folder_name, install } = gameManagerMap[runner].getGameInfo(appName)
-  const gameSettings = await gameManagerMap[runner].getSettings(appName)
-
-  return runWineCommand({
-    gameSettings,
-    installFolderName: folder_name,
-    gameInstallPath: install.install_path,
-    commandParts,
-    wait,
-    protonVerb,
-    startFolder
-  })
 }
 
 type DistArgs = {
@@ -401,7 +423,7 @@ const findExecutables = async (folderPath: string): Promise<string[]> => {
   return executables
 }
 
-function cleanUpDownload(appName: string, directory: string) {
+export function cleanUpDownload(appName: string, directory: string) {
   inProgressDownloadsMap.delete(appName)
   inProgressExtractionsMap.delete(appName)
   deleteAbortController(appName)
@@ -421,10 +443,6 @@ function getDownloadUrl(platformInfo: PlatformConfig, appName: string) {
     : platformInfo.external_url
 
   return downloadUrl
-}
-
-function roundToTenth(x: number) {
-  return Math.round(x * 10) / 10
 }
 
 async function downloadGame(
@@ -536,24 +554,6 @@ async function downloadGame(
   })
 }
 
-function calculateProgress(
-  downloadedBytes: number,
-  downloadSize: number,
-  downloadSpeed: number,
-  diskWriteSpeed: number,
-  progress: number
-) {
-  const eta = calculateEta(downloadedBytes, downloadSpeed, downloadSize)
-
-  return {
-    percent: roundToTenth(progress),
-    diskSpeed: roundToTenth(diskWriteSpeed / 1024 / 1024),
-    downSpeed: roundToTenth(downloadSpeed / 1024 / 1024),
-    bytes: roundToTenth(downloadedBytes / 1024 / 1024),
-    eta
-  }
-}
-
 function sanitizeFileName(filename: string) {
   return filename.replace(/[/\\?%*:|"<>]/g, '-')
 }
@@ -656,11 +656,15 @@ async function getTokenGatedPlatforms(
     address,
     channel_id
   }
-  const validateUrl = `${valistBaseApiUrlv1}/license_contracts/validate`
+  const validateUrl = `${DEV_PORTAL_URL}api/v1/license_contracts/validate`
   const validateResponse = await fetch(validateUrl, {
     method: 'POST',
     body: JSON.stringify(request)
   })
+
+  if (!validateResponse.ok) {
+    throw `Could not validate access ${await validateResponse.text()}`
+  }
 
   const validateResult: LicenseConfigValidateResult =
     await validateResponse.json()
@@ -687,7 +691,7 @@ function updateInstalledInfo(appName: string, installedInfo: InstalledInfo) {
   writeManifestFile(appName, installedInfo)
 }
 
-function getDestinationPath(gameInfo: GameInfo, dirpath: string) {
+export function getDestinationPath(gameInfo: GameInfo, dirpath: string) {
   if (
     gameInfo.account_name === undefined ||
     gameInfo.project_name === undefined
@@ -794,7 +798,8 @@ export async function install(
     channelName,
     accessCode,
     updateOnly = false,
-    siweValues
+    siweValues,
+    modOptions
   }: InstallArgs
 ): Promise<InstallResult> {
   if (await resumeIfPaused(appName)) {
@@ -804,7 +809,21 @@ export async function install(
   let { directory, fileName } = { directory: '', fileName: '' }
   try {
     const gameInfo = getGameInfo(appName)
-    const { title } = gameInfo
+    const { title, account_name } = gameInfo
+    const isMarketWars = account_name === 'marketwars'
+
+    if (isMarketWars && modOptions?.zipFilePath) {
+      try {
+        await prepareBaseGameForModding({
+          appName,
+          zipFile: modOptions.zipFilePath,
+          installPath: dirpath
+        })
+      } catch (error) {
+        callAbortController(appName)
+        return { status: 'error' }
+      }
+    }
 
     const destinationPath = updateOnly
       ? dirpath
@@ -927,6 +946,14 @@ export async function install(
       channelName
     })
 
+    if (isMarketWars) {
+      try {
+        await runModPatcher(appName)
+      } catch (error) {
+        return { status: 'error' }
+      }
+    }
+
     if (platformToInstall === 'Windows') {
       logInfo(`Looking for  distributables for ${appName}`, LogPrefix.HyperPlay)
       await installDistributables({
@@ -944,6 +971,9 @@ export async function install(
     )
     if (!`${error}`.includes('Download stopped or paused')) {
       callAbortController(appName)
+      return {
+        status: 'abort'
+      }
     }
 
     return {
@@ -1250,18 +1280,16 @@ export function appIsInLibrary(appName: string): boolean {
 }
 
 export function getGameInfo(appName: string): GameInfo {
+  if (!appName) {
+    throw new Error('AppName is empty')
+  }
+
   const appInfo = hpLibraryStore
     .get('games', [])
     .find((app) => app.app_name === appName)
 
-  // TODO: remove this in the future, it is only needed for games downloaded from v0.10 and below
-  // write manifest file
-  if (appInfo?.is_installed && appInfo.install) {
-    writeManifestFile(appName, appInfo.install)
-  }
-
   if (!appInfo) {
-    throw new Error('App not found in library')
+    throw new Error(`AppName ${appName} not found in library`)
   }
 
   return appInfo
@@ -1347,7 +1375,7 @@ export async function getExtraInfo(appName: string): Promise<ExtraInfo> {
 }
 
 export async function launch(appName: string): Promise<boolean> {
-  const isAvailable = isGameAvailable(appName)
+  const isAvailable = await isGameAvailable(appName)
 
   if (!isAvailable) {
     const { title } = getGameInfo(appName)
@@ -1370,6 +1398,54 @@ export async function launch(appName: string): Promise<boolean> {
   }
 
   return launchGame(appName, getGameInfo(appName), 'hyperplay')
+}
+
+async function createSiweMessage(signerAddress: string): Promise<SiweMessage> {
+  const mainWindowUrl = getMainWindow()?.webContents.getURL()
+  if (mainWindowUrl === undefined) {
+    throw 'could not get main window url'
+  }
+  const url = new URL(mainWindowUrl)
+  let domain = url.host
+  let origin = url.origin
+  // host is empty string and origin is null on the artifact
+  if (url.protocol === 'file:') {
+    domain = 'hyperplay'
+    origin = 'file://hyperplay'
+  }
+
+  const statementRes = await fetch(
+    DEV_PORTAL_URL + 'api/v1/license_contracts/validate/get-nonce'
+  )
+  if (!statementRes.ok) {
+    const responseError = await statementRes.text()
+    throw new Error(`Failed to get nonce for SIWE message. ${responseError}`)
+  }
+  const nonce = await statementRes.text()
+
+  return new SiweMessage({
+    domain,
+    address: signerAddress,
+    statement: nonce.replaceAll('"', ''),
+    uri: origin,
+    version: '1',
+    chainId: 1
+  })
+}
+
+export async function requestSIWE() {
+  const providers = await import('@hyperplay/providers')
+  const signer = await providers.provider.getSigner()
+  const address = await signer.getAddress()
+  const siweMessage = await createSiweMessage(address)
+  const message = siweMessage.prepareMessage()
+  const signature = await signer.signMessage(message)
+
+  return {
+    message,
+    signature,
+    address
+  }
 }
 
 // TODO: Refactor to only replace updated files
@@ -1398,16 +1474,105 @@ export async function update(
     return { status: 'error' }
   }
 
-  //install the new version
-  const installResult = await install(appName, {
-    path: gameInfo.install.install_path,
-    platformToInstall: gameInfo.install.platform,
-    channelName: gameInfo.install.channelName,
-    accessCode: args?.accessCode,
-    updateOnly: true,
-    siweValues: args?.siweValues
+  const {
+    channels,
+    install: { channelName, platform, install_size, install_path, executable }
+  } = gameInfo
+
+  const isValidUpdate =
+    channels &&
+    channelName &&
+    platform &&
+    install_path &&
+    executable &&
+    install_size !== undefined
+
+  if (!isValidUpdate) {
+    logError(
+      `Channel name or platform not found for ${appName} in update`,
+      LogPrefix.HyperPlay
+    )
+    throw new Error('Channel name or platform not found')
+  }
+
+  const channelRequiresToken = !!channels[channelName]?.license_config.tokens
+
+  if (channelRequiresToken && args?.siweValues === undefined) {
+    // request from frontend
+    if (args === undefined) {
+      args = {}
+    }
+    try {
+      args.siweValues = await requestSIWE()
+    } catch (err) {
+      logError(
+        `Could not get SIWE sig for updating token gated game. ${err}`,
+        LogPrefix.HyperPlay
+      )
+      captureException(err)
+    }
+  }
+
+  const newVersion = channels[channelName].release_meta.name
+  const abortController = createAbortController(appName)
+  const { status, error } = await applyPatching(
+    gameInfo,
+    newVersion,
+    abortController.signal
+  )
+
+  const isMarketWars = gameInfo.account_name === 'marketwars'
+
+  if (status === 'abort') {
+    logWarning(`Patching ${appName} aborted`, LogPrefix.HyperPlay)
+    return { status: 'abort' }
+  } else if (status === 'error' && !error?.includes('aborted')) {
+    // if error, download the zip file
+    const installResult = await install(appName, {
+      path: gameInfo.install.install_path,
+      platformToInstall: gameInfo.install.platform,
+      channelName: gameInfo.install.channelName,
+      accessCode: args?.accessCode,
+      updateOnly: true,
+      siweValues: args?.siweValues
+    })
+    if (isMarketWars) {
+      try {
+        await runModPatcher(appName)
+      } catch (error) {
+        logError(`Error running mod patcher: ${error}`, LogPrefix.HyperPlay)
+        return { status: 'error', error: `${error}` }
+      }
+    }
+    return installResult
+  }
+
+  if (isMarketWars) {
+    try {
+      await runModPatcher(appName)
+    } catch (error) {
+      return { status: 'error' }
+    }
+  }
+
+  const installedInfo: InstalledInfo = {
+    appName,
+    install_path,
+    executable,
+    install_size,
+    is_dlc: false,
+    version: newVersion,
+    platform,
+    channelName
+  }
+
+  updateInstalledInfo(appName, installedInfo)
+  sendFrontendMessage('refreshLibrary', 'hyperplay')
+  notify({
+    title: gameInfo.title,
+    body: 'Updated'
   })
-  return installResult
+  return { status: 'done' }
 }
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -1469,3 +1634,497 @@ function writeManifestFile(
 
   return store.set('manifest', installedInfo)
 }
+
+export const downloadPatcher = async () => {
+  try {
+    const { downloadIPDTForOS } = await import('@hyperplay/patcher')
+    const versionFile = path.join(toolsPath, 'ipdt_version.txt')
+
+    const currentVersion = existsSync(versionFile)
+      ? readFileSync(versionFile, 'utf-8')
+      : undefined
+
+    await downloadIPDTForOS(toolsPath, currentVersion)
+    const version = await getIpdtPatcherVersion()
+
+    logInfo(`IPDT patcher ${version} setup successfully`, LogPrefix.HyperPlay)
+    await writeFile(versionFile, version)
+
+    if (!isWindows) {
+      await chmod(ipdtPatcher, 0o755)
+    }
+  } catch (error) {
+    captureException(error, {
+      extra: {
+        method: 'downloadPatcher'
+      },
+      tags: {
+        feature: 'Patcher',
+        method: 'downloadPatcher'
+      }
+    })
+
+    const errorMsg = `Error downloading IPDT: ${error}`
+    logError(errorMsg, LogPrefix.HyperPlay)
+    throw errorMsg
+  }
+}
+
+const getIpdtPatcherVersion = async () => {
+  const { stdout } = await spawnAsync(ipdtPatcher, ['-version'])
+  return 'v' + `${stdout}`.split(' ')[2]
+}
+
+export async function downloadGameIpdtManifest(
+  appName: string,
+  version: string
+) {
+  try {
+    const {
+      install: { channelName, platform },
+      is_installed
+    } = getGameInfo(appName)
+    if (!channelName || !platform || !is_installed) throw Error('Invalid game')
+
+    // download only if the manifest file is not already downloaded and its the same version
+    const manifestName = `${appName}-${platform}-${version}.json`
+    const manifestPath = path.join(ipdtManifestsPath, manifestName)
+    if (!existsSync(ipdtManifestsPath)) {
+      mkdirSync(ipdtManifestsPath, { recursive: true })
+    }
+    if (existsSync(manifestPath)) return
+
+    const releaseId = generateID(appName, version)
+    const manifestUrl = await getIPDTManifestUrl(releaseId, platform)
+    if (!manifestUrl) return logWarning(`Manifest not found for ${appName}`)
+
+    // download and save the manifest file as a json file in manifest folder
+    logInfo(
+      `Downloading manifest for ${appName} from ${manifestUrl} to ${manifestPath}`,
+      LogPrefix.HyperPlay
+    )
+    const response = await fetch(manifestUrl)
+    if (!response.ok) {
+      throw new Error(`Failed to download manifest: ${response.statusText}`)
+    }
+    const manifestData = await response.text()
+    await writeFile(manifestPath, manifestData)
+  } catch (error) {
+    logError(
+      `Error downloading manifest for ${appName}: ${error}`,
+      LogPrefix.HyperPlay
+    )
+    captureException(
+      new Error(`Error downloading manifest for ${appName}: ${error}`),
+      {
+        extra: {
+          method: 'downloadGameIpdtManifest',
+          appName,
+          version
+        }
+      }
+    )
+    throw new Error(`Error downloading manifest for ${appName}: ${error}`)
+  }
+}
+
+async function checkIfPatchingIsFaster(
+  oldManifestPath: string,
+  newManifestPath: string,
+  gameInfo: GameInfo
+) {
+  // read manifests
+  const oldManifestJson = JSON.parse(readFileSync(oldManifestPath).toString())
+  const newManifestJson = JSON.parse(readFileSync(newManifestPath).toString())
+
+  // compare manifests
+
+  const { compareManifests } = await import('@hyperplay/patcher')
+  const { estimatedPatchSizeInKB } = compareManifests(
+    oldManifestJson.files,
+    newManifestJson.files
+  )
+
+  // calc break point % where patching is faster
+  if (
+    gameInfo?.install?.platform &&
+    gameInfo.channels &&
+    gameInfo?.install?.channelName &&
+    Object.hasOwn(gameInfo.channels, gameInfo.install.channelName)
+  ) {
+    const channelName = gameInfo.install.channelName
+    const [releaseMeta] = getReleaseMeta(gameInfo, channelName)
+    const platform = handleArchAndPlatform(
+      gameInfo.install.platform,
+      releaseMeta
+    )
+    const downloadSize = parseInt(
+      releaseMeta.platforms[platform]?.downloadSize ?? '0'
+    )
+    const installSize = parseInt(
+      releaseMeta.platforms[platform]?.installSize ?? '0'
+    )
+    // @TODO: get these speed values from local checks of download/write speed
+    const patchingSpeeds = getFlag('patching-speeds', {
+      downloadSpeedInKBPerSecond: 25600,
+      extractionSpeedInKBPerSecond: 51200,
+      patchingSpeedEstimateInKBPerSecond: 5120
+    }) as {
+      downloadSpeedInKBPerSecond: number
+      extractionSpeedInKBPerSecond: number
+      patchingSpeedEstimateInKBPerSecond: number
+    }
+    const downloadSpeedInKBPerSecond = patchingSpeeds.downloadSpeedInKBPerSecond
+    const extractionSpeedInKBPerSecond =
+      patchingSpeeds.extractionSpeedInKBPerSecond
+    const estTimeToInstallFullGameInSec =
+      (downloadSize / 1024) * downloadSpeedInKBPerSecond +
+      (installSize / 1024) * extractionSpeedInKBPerSecond
+
+    // @TODO: get this value from local check of patching speed
+    const patchingSpeedEstimateInKBPerSecond =
+      patchingSpeeds.patchingSpeedEstimateInKBPerSecond
+    const estTimeToPatchGameInSec =
+      estimatedPatchSizeInKB / patchingSpeedEstimateInKBPerSecond
+
+    if (estTimeToPatchGameInSec > estTimeToInstallFullGameInSec) {
+      const abortMessage = `Downloading full game instead of patching. \n 
+        Estimated time to install full game: ${estTimeToInstallFullGameInSec} seconds. \n
+        Estimated time to patch: ${estTimeToPatchGameInSec}
+      `
+      logInfo(abortMessage, LogPrefix.HyperPlay)
+      const patchingError = new PatchingError(
+        abortMessage,
+        'slower-than-install',
+        {
+          event: 'Patching Too Slow',
+          properties: {
+            game_name: gameInfo.app_name,
+            game_title: gameInfo.title,
+            platform: getPlatformName(platform),
+            platform_arch: platform,
+            est_time_to_install_sec: estTimeToInstallFullGameInSec.toString(),
+            est_time_to_patch_sec: estTimeToPatchGameInSec.toString(),
+            old_game_version: gameInfo.install.version ?? 'unknown',
+            new_game_version: gameInfo.version ?? 'unknown'
+          }
+        }
+      )
+      throw patchingError
+    }
+  }
+}
+
+async function applyPatching(
+  gameInfo: GameInfo,
+  newVersion: string,
+  signal: AbortSignal
+): Promise<InstallResult> {
+  const gamesPatcherIsEnabled = getFlag('enable-patcher-per-game', {}) as object
+
+  if (!Object.hasOwn(gamesPatcherIsEnabled, gameInfo.app_name) || !isWindows) {
+    return { status: 'error' }
+  }
+
+  const {
+    app_name: appName,
+    install: { install_path, version, platform }
+  } = gameInfo
+
+  const datastoreDir = path.join(install_path!, '.temp', appName)
+
+  try {
+    const { patchFolder } = await import('@hyperplay/patcher')
+
+    const mainWindow = getMainWindow()
+    let aborted = false
+
+    await downloadPatcher()
+
+    if (!version || !install_path || !platform) {
+      logError(
+        `Version or install path not found for ${appName} in applyPatching`,
+        LogPrefix.HyperPlay
+      )
+      captureException(
+        new Error(
+          'Could not start patching because of missing version, install_path or platform'
+        ),
+        {
+          extra: {
+            method: 'applyPatching',
+            appName,
+            install_path,
+            title: gameInfo.title,
+            platform,
+            version,
+            newVersion
+          }
+        }
+      )
+
+      return { status: 'error', error: 'Version or install path not found' }
+    }
+
+    trackEvent({
+      event: 'Patching Started',
+      properties: {
+        game_name: gameInfo.app_name,
+        game_title: gameInfo.title,
+        platform: getPlatformName(platform),
+        platform_arch: platform
+      }
+    })
+
+    const previousManifest = await getManifest(appName, platform, version)
+    const currentManifest = await getManifest(appName, platform, newVersion)
+
+    // check if it is faster to patch or install and throw if install is faster
+    await checkIfPatchingIsFaster(previousManifest, currentManifest, gameInfo)
+
+    logInfo(
+      `Patching ${gameInfo.title} from ${version} to ${newVersion}`,
+      LogPrefix.HyperPlay
+    )
+
+    let totalBlocks = 0
+    let downloadedBlocks = 0
+    let downloadedData = 0
+    const blockSize = 512 * 1024 // 512KB in bytes
+    const startTime = Date.now()
+
+    if (!existsSync(datastoreDir)) {
+      mkdirSync(datastoreDir, { recursive: true })
+    }
+
+    const { maxWorkers } = GlobalConfig.get().getSettings()
+
+    const { generator } = patchFolder(
+      ipdtPatcher,
+      install_path,
+      currentManifest,
+      previousManifest,
+      {
+        signal,
+        s3API: ipfsGateway,
+        datastoreDir,
+        workers: maxWorkers || 6
+      }
+    )
+
+    if (signal.aborted) {
+      logInfo(`Patching ${appName} aborted`, LogPrefix.HyperPlay)
+      rmSync(datastoreDir, { recursive: true })
+      return { status: 'abort' }
+    }
+
+    signal.onabort = () => {
+      aborted = true
+      rmSync(datastoreDir, { recursive: true })
+      return { status: 'abort' }
+    }
+
+    for await (const output of generator) {
+      logInfo(output, LogPrefix.HyperPlay)
+
+      if (signal.aborted) {
+        logInfo(`Patching ${appName} aborted`, LogPrefix.HyperPlay)
+        return { status: 'abort' }
+      }
+
+      if (output.includes('connection refused')) {
+        logError(
+          `Error while patching ${appName}: connection refused`,
+          LogPrefix.HyperPlay
+        )
+        return {
+          status: 'error',
+          error: 'Error while patching: connection refused'
+        }
+      }
+
+      const match = output.match(
+        /Blocks: (\d+)\/(\d+), Data Downloaded: ([\d.]+)/
+      )
+      if (match) {
+        downloadedBlocks = parseInt(match[1], 10)
+        totalBlocks = parseInt(match[2], 10)
+        downloadedData = parseInt(match[3])
+
+        const percent = (downloadedBlocks / totalBlocks) * 100
+        const currentTime = Date.now()
+        const elapsedTime = (currentTime - startTime) / 1000 // in seconds
+        const downloadedDataInMiB = downloadedData / 1024 / 1024
+        const downloadSpeed = downloadedData / elapsedTime
+        const totalSize = blockSize * totalBlocks
+        const eta = calculateEta(downloadedData, downloadSpeed, totalSize) ?? 0
+
+        // update queue element.size with totalSize
+        const queueElement = getFirstQueueElement()
+        if (queueElement) {
+          updateQueueElementParam(queueElement, 'params', {
+            ...queueElement.params,
+            size: getFileSize(totalSize)
+          })
+        }
+
+        sendFrontendMessage('gameStatusUpdate', {
+          appName,
+          status: 'patching',
+          runner: 'hyperplay',
+          folder: gameInfo.install.install_path
+        })
+
+        mainWindow?.webContents.send(`progressUpdate-${appName}`, {
+          appName,
+          status: 'patching',
+          runner: 'hyperplay',
+          folder: gameInfo.install.install_path,
+          progress: {
+            folder: gameInfo.install.install_path,
+            totalSize,
+            percent,
+            diskSpeed: downloadSpeed / 1024 / 1024,
+            downSpeed: downloadSpeed / 1024 / 1024,
+            bytes: downloadedDataInMiB,
+            eta
+          }
+        })
+
+        logInfo(
+          `Progress: ${percent.toFixed(2)}%, Downloaded: ${getFileSize(
+            downloadedData
+          )}, Speed: ${getFileSize(
+            downloadSpeed
+          )}/s, ETA: ${eta} totalSize: ${totalSize} = ${getFileSize(
+            totalSize
+          )}`,
+          LogPrefix.HyperPlay
+        )
+      }
+    }
+    // need this to cover 100% of abort cases
+    if (aborted) {
+      rmSync(datastoreDir, { recursive: true })
+      return { status: 'abort' }
+    }
+
+    trackEvent({
+      event: 'Patching Success',
+      properties: {
+        game_name: gameInfo.app_name,
+        game_title: gameInfo.title,
+        platform: getPlatformName(platform),
+        platform_arch: platform
+      }
+    })
+
+    logInfo(`Patching ${appName} completed`, LogPrefix.HyperPlay)
+    rmSync(datastoreDir, { recursive: true })
+
+    return { status: 'done' }
+  } catch (error) {
+    if (error instanceof PatchingError) {
+      if (error.reason === 'slower-than-install') {
+        if (error.eventToTrack) {
+          trackEvent(error.eventToTrack)
+        }
+        // this will not track any error events or call captureException in the calling code. it will try to install
+        return { status: 'error' }
+      }
+    }
+
+    logError(`Error while patching ${error}`, LogPrefix.HyperPlay)
+
+    trackEvent({
+      event: 'Patching Failed',
+      properties: {
+        error: `${error}`,
+        game_name: gameInfo.app_name,
+        game_title: gameInfo.title,
+        platform: getPlatformName(platform!),
+        platform_arch: platform!
+      }
+    })
+
+    captureException(new Error(`Error while patching ${error}`), {
+      extra: {
+        method: 'applyPatching',
+        appName,
+        title: gameInfo.title,
+        install_path,
+        platform,
+        version,
+        newVersion
+      }
+    })
+
+    // errors can be thrown before datastore dir created. rmSync on nonexistent dir blocks indefinitely
+    if (existsSync(datastoreDir)) {
+      rmSync(datastoreDir, { recursive: true })
+    }
+
+    return { status: 'error', error: `Error while patching ${error}` }
+  }
+}
+
+async function getManifest(
+  appName: string,
+  platformName: string,
+  version: string
+) {
+  try {
+    const manifestPath = path.join(
+      ipdtManifestsPath,
+      `${appName}-${platformName}-${version}.json`
+    )
+
+    if (!existsSync(manifestPath)) {
+      logDebug(
+        `Manifest for ${appName} not found for version ${version} and platform ${platformName}, downloading it.`,
+        LogPrefix.HyperPlay
+      )
+
+      await downloadGameIpdtManifest(appName, version)
+    }
+
+    return manifestPath
+  } catch (error) {
+    logError(
+      `Error in getManifest for ${appName}: ${error}`,
+      LogPrefix.HyperPlay
+    )
+    captureException(
+      new Error(`Error in getManifest for ${appName}: ${error}`),
+      {
+        extra: {
+          method: 'getManifest',
+          appName,
+          platformName,
+          version
+        }
+      }
+    )
+    throw new Error(`Error in getManifest for ${appName}: ${error}`)
+  }
+}
+
+// TODO: finish this method for Repair Game purposes
+/* export async function generateManifestFromFolder(appName: string) {
+  const gameInfo = getGameInfo(appName)
+  const { install_path, version } = gameInfo.install
+
+  if (!version || !install_path) {
+    logError(
+      `Version or install path not found for ${appName} in generateManifestFromFolder`,
+      LogPrefix.HyperPlay
+    )
+    throw new Error('Version or install path not found')
+  }
+
+  const manifestPath = getManifest(appName, version)
+  const generatedManifest = join(manifestPath, '.current')
+
+  // generate manifest from folder
+  const manifest = await generateManifestFile(install_path, generatedManifest)
+} */

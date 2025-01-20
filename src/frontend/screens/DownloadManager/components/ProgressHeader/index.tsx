@@ -5,6 +5,7 @@ import { AreaChart, Area, ResponsiveContainer } from 'recharts'
 import { useTranslation } from 'react-i18next'
 import { DownloadManagerState } from 'common/types'
 import { Progress } from '@mantine/core'
+import { size } from 'frontend/helpers'
 
 interface Point {
   download: number
@@ -21,7 +22,7 @@ export default function ProgressHeader(props: {
   state: DownloadManagerState
 }) {
   const { t } = useTranslation()
-  const [progress] = hasProgress(props.appName)
+  const { progress } = hasProgress(props.appName)
   const [avgSpeed, setAvgDownloadSpeed] = useState<Point[]>(
     Array<Point>(20).fill({ download: 0, disk: 0 })
   )
@@ -50,7 +51,10 @@ export default function ProgressHeader(props: {
   const showDownloadBar =
     props.state !== 'idle' && props.appName && progress.percent
 
-  console.log('showDownloadBar', showDownloadBar, props.state, props)
+  const progressBytes =
+    typeof progress.bytes === 'number'
+      ? size(progress.bytes * 1024 * 1024)
+      : progress.bytes
 
   return (
     <>
@@ -106,12 +110,12 @@ export default function ProgressHeader(props: {
           </div>
         </div>
       </div>
-      {showDownloadBar && (
+      {showDownloadBar ? (
         <div className="downloadBar">
           <div className="downloadProgressStats">
             <p className="downloadStat" color="var(--text-default)">{`${
               progress.percent?.toFixed(1) ?? 0
-            }% [${progress.bytes ?? ''}] `}</p>
+            }% [${progressBytes ?? ''}] `}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline' }}>
             <div style={{ width: '100%', marginRight: 'var(--space-md)' }}>
@@ -134,7 +138,7 @@ export default function ProgressHeader(props: {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </>
   )
 }

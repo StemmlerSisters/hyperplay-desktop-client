@@ -7,6 +7,8 @@ import { isOnline } from '../online_monitor'
 import { sendFrontendMessage } from '../main_window'
 import { trackEvent } from 'backend/metrics/metrics'
 import { gameManagerMap } from 'backend/storeManagers'
+import { captureException } from '@sentry/electron'
+import { platform } from 'os'
 
 async function installQueueElement(params: InstallParams): Promise<{
   status: DMStatus
@@ -22,7 +24,8 @@ async function installQueueElement(params: InstallParams): Promise<{
     platformToInstall,
     channelName,
     accessCode,
-    siweValues
+    siweValues,
+    modOptions
   } = params
   const { title } = gameManagerMap[runner].getGameInfo(appName)
 
@@ -79,6 +82,15 @@ async function installQueueElement(params: InstallParams): Promise<{
       ['Installation of', params.appName, 'failed with:', error],
       LogPrefix.DownloadManager
     )
+    captureException(error, {
+      tags: {
+        game_name: appName,
+        store_name: getStoreName(runner),
+        game_title: title,
+        platform: platform(),
+        platform_arch: platformToInstall
+      }
+    })
   }
 
   try {
@@ -92,7 +104,8 @@ async function installQueueElement(params: InstallParams): Promise<{
         installLanguage,
         channelName,
         accessCode,
-        siweValues
+        siweValues,
+        modOptions
       })
 
     const { status, error } = await installInstance()
@@ -137,7 +150,6 @@ async function installQueueElement(params: InstallParams): Promise<{
 
     return { status }
   } catch (error) {
-    trackFailedInstall(`${error}`)
     errorMessage(`${error}`)
     return { status: 'error' }
   } finally {
@@ -223,10 +235,12 @@ async function updateQueueElement(params: InstallParams): Promise<{
   }
 
   try {
+    const prevVersion = params.gameInfo.install.version
     const { status } = await gameManagerMap[runner].update(appName, {
       siweValues,
       accessCode: params.accessCode
     })
+    const newVersion = params.gameInfo.install.version
 
     if (status === 'error') {
       errorMessage('')
@@ -238,7 +252,9 @@ async function updateQueueElement(params: InstallParams): Promise<{
           store_name: getStoreName(runner),
           game_title: title,
           platform: getPlatformName(params.platformToInstall),
-          platform_arch: params.platformToInstall
+          platform_arch: params.platformToInstall,
+          version_from: prevVersion,
+          version_to: newVersion
         }
       })
     }

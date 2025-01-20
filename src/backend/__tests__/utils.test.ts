@@ -1,10 +1,22 @@
 import * as utils from '../utils'
-import { getExecutableAndArgs } from '../utils'
+import { getExecutableAndArgs, copyRecursiveAsync } from '../utils'
+import { mkdir, writeFile, symlink } from 'fs/promises'
+import { join } from 'path'
+import { existsSync } from 'fs'
+import { rimraf } from 'rimraf'
+import os from 'os'
+import * as fs from 'fs'
 
 jest.mock('electron')
 jest.mock('../logger/logger')
 jest.mock('../logger/logfile')
 jest.mock('../dialog/dialog')
+jest.mock('backend/vite_constants', () => ({
+  VITE_IPFS_API: 'https://ipfs.io/ipfs/'
+}))
+jest.mock('backend/flags/flags', () => ({
+  VITE_LD_ENVIRONMENT_ID: '123'
+}))
 
 describe('backend/utils.ts', () => {
   test('quoteIfNeccessary', () => {
@@ -191,6 +203,15 @@ describe('backend/utils.ts', () => {
       expect(getExecutableAndArgs(input)).toEqual(expected)
     })
 
+    it('should correctly parse executable with .exe extension and no arguments', () => {
+      const input = 'path/to/application.exe'
+      const expected = {
+        executable: 'path/to/application.exe',
+        launchArgs: ''
+      }
+      expect(getExecutableAndArgs(input)).toEqual(expected)
+    })
+
     it('should correctly parse executable with .app extension and no arguments', () => {
       const input = 'path/to/application.app'
       const expected = {
@@ -220,10 +241,10 @@ describe('backend/utils.ts', () => {
     })
 
     it('should return empty strings if no executable is found', () => {
-      const input = '--arg1 --arg2'
+      const input = ''
       const expected = {
         executable: '',
-        launchArgs: '--arg1 --arg2'
+        launchArgs: ''
       }
       expect(getExecutableAndArgs(input)).toEqual(expected)
     })
@@ -253,6 +274,121 @@ describe('backend/utils.ts', () => {
         launchArgs: '--arg1 --arg2'
       }
       expect(getExecutableAndArgs(input)).toEqual(expected)
+    })
+
+    it('should handle simple executable name without args', () => {
+      const input = 'executable.exe'
+      const expected = {
+        executable: 'executable.exe',
+        launchArgs: ''
+      }
+      expect(getExecutableAndArgs(input)).toEqual(expected)
+    })
+
+    it('should handle simple executable name with args', () => {
+      const input = 'steam --no-browser'
+      const expected = {
+        executable: 'steam',
+        launchArgs: '--no-browser'
+      }
+      expect(getExecutableAndArgs(input)).toEqual(expected)
+    })
+
+    it('should handle absolute path from /usr/bin', () => {
+      const input = '/usr/bin/steam --no-browser'
+      const expected = {
+        executable: '/usr/bin/steam',
+        launchArgs: '--no-browser'
+      }
+      expect(getExecutableAndArgs(input)).toEqual(expected)
+    })
+
+    it('should handle absolute path from /usr/local/bin', () => {
+      const input = '/usr/local/bin/custom-launcher --fullscreen'
+      const expected = {
+        executable: '/usr/local/bin/custom-launcher',
+        launchArgs: '--fullscreen'
+      }
+      expect(getExecutableAndArgs(input)).toEqual(expected)
+    })
+  })
+
+  describe('copyRecursiveAsync', () => {
+    const testDir = join(os.tmpdir(), `test-copy-${Date.now()}`)
+    const sourceDir = join(testDir, 'source')
+    const destDir = join(testDir, 'dest')
+
+    beforeEach(async () => {
+      jest.useFakeTimers({ advanceTimers: true })
+      await mkdir(sourceDir, { recursive: true })
+      await mkdir(destDir, { recursive: true })
+    })
+
+    afterEach(async () => {
+      jest.clearAllTimers() // Clear pending timers
+      jest.useRealTimers() // Restore real timers
+      await rimraf(testDir)
+    })
+
+    it('should copy a single file', async () => {
+      const testFile = join(sourceDir, 'test.txt')
+      const destFile = join(destDir, 'test.txt')
+      await writeFile(testFile, 'test content')
+
+      await copyRecursiveAsync(testFile, destFile)
+
+      expect(existsSync(destFile)).toBe(true)
+    })
+
+    it('should copy a directory recursively', async () => {
+      const subDir = join(sourceDir, 'subdir')
+      const testFile = join(subDir, 'test.txt')
+      await mkdir(subDir, { recursive: true })
+      await writeFile(testFile, 'test content')
+
+      await copyRecursiveAsync(sourceDir, join(destDir, 'source'))
+
+      expect(existsSync(join(destDir, 'source/subdir/test.txt'))).toBe(true)
+    })
+
+    it('should skip symbolic links', async () => {
+      const testFile = join(sourceDir, 'test.txt')
+      const linkFile = join(sourceDir, 'link.txt')
+      await writeFile(testFile, 'test content')
+      await symlink(testFile, linkFile)
+
+      await copyRecursiveAsync(linkFile, join(destDir, 'link.txt'))
+
+      expect(existsSync(join(destDir, 'link.txt'))).toBe(false)
+    })
+
+    it('should throw on timeout', async () => {
+      const COPY_TIMEOUT_MS = 30000
+      const testFile = join(sourceDir, 'test.txt')
+      await writeFile(testFile, 'test content')
+
+      // Mock the copyFile function to simulate a slow operation
+      const mockCopyFile = jest
+        .spyOn(fs.promises, 'copyFile')
+        .mockImplementation(async () => {
+          return new Promise((resolve) => {
+            setTimeout(resolve, COPY_TIMEOUT_MS + 1000)
+          })
+        })
+
+      const destFile = join(destDir, 'test.txt')
+
+      // Start the copy operation but don't await it yet
+      const copyPromise = copyRecursiveAsync(testFile, destFile)
+
+      // Advance timers to trigger timeout
+      jest.advanceTimersByTime(COPY_TIMEOUT_MS + 100)
+
+      // Now check if it throws
+      await expect(copyPromise).rejects.toThrow('Timeout')
+
+      // Restore original implementation
+      mockCopyFile.mockRestore()
     })
   })
 })

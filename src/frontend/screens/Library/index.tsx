@@ -25,6 +25,7 @@ import { LibraryTopBar } from './components/LibraryTopBar'
 import libraryState from '../../state/libraryState'
 import { observer } from 'mobx-react-lite'
 import storeAuthState from 'frontend/state/storeAuthState'
+import SteamInstallButton from './components/SteamInstall/SteamInstallButton'
 
 const storage = window.localStorage
 
@@ -39,10 +40,12 @@ export default observer(function Library(): JSX.Element {
   const { layout, epic, gog, platform, connectivity } =
     useContext(ContextProvider)
   const { t } = useTranslation()
+
   const isOffline = connectivity.status !== 'online'
 
   const libraryToShow = libraryState.library
   const numberOfGames = libraryState.numberOfGames
+  const isMac = platform === 'darwin'
 
   //only show epic or gog if the user is logged in with epic.username && or gog.username && check
 
@@ -254,6 +257,7 @@ export default observer(function Library(): JSX.Element {
           >
             {t('add_game', 'Add Game')}
           </Button>
+          {isMac ? <SteamInstallButton /> : null}
         </div>
         <LibraryTopBar
           filters={filters}
@@ -275,18 +279,19 @@ export default observer(function Library(): JSX.Element {
             />
           )}
 
-          {libraryState.showFavourites && !libraryState.showFavouritesLibrary && (
-            <>
-              <h3 className={styles.libraryHeader}>
-                {t('favourites', 'Favourites')}
-              </h3>
-              <GamesList
-                library={libraryState.favourites}
-                handleGameCardClick={handleModal}
-                isFirstLane
-              />
-            </>
-          )}
+          {libraryState.showFavourites &&
+            !libraryState.showFavouritesLibrary && (
+              <>
+                <h3 className={styles.libraryHeader}>
+                  {t('favourites', 'Favourites')}
+                </h3>
+                <GamesList
+                  library={libraryState.favourites}
+                  handleGameCardClick={handleModal}
+                  isFirstLane
+                />
+              </>
+            )}
 
           {libraryState.refreshing &&
             !libraryState.refreshingInTheBackground && (

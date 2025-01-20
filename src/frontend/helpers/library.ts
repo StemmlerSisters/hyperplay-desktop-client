@@ -10,10 +10,6 @@ import {
 import { TFunction } from 'i18next'
 import { getGameInfo, getPlatformName } from './index'
 import { DialogModalOptions } from 'frontend/types'
-import { SiweMessage } from 'siwe'
-import { valistBaseApiUrlv1 } from 'common/constants'
-import { ethers } from 'ethers'
-import axios from 'axios'
 import authState from 'frontend/state/authState'
 import gameUpdateState from 'frontend/state/GameUpdateState'
 
@@ -35,6 +31,9 @@ type InstallArgs = {
   channelName?: string
   accessCode?: string
   siweValues?: SiweValues
+  modOptions?: {
+    zipFilePath: string
+  }
 }
 
 async function install({
@@ -49,7 +48,8 @@ async function install({
   platformToInstall = 'Windows',
   channelName,
   accessCode,
-  siweValues
+  siweValues,
+  modOptions
 }: InstallArgs) {
   if (!installPath) {
     console.error('installPath is undefined')
@@ -110,7 +110,8 @@ async function install({
     gameInfo: JSON.parse(JSON.stringify(gameInfo)),
     channelName,
     accessCode,
-    siweValues
+    siweValues,
+    modOptions
   })
 }
 
@@ -159,11 +160,13 @@ const launch = async ({
       return res()
     }
     showDialogModal({
+      isModal: false,
       message: t(
         'gamepage:box.compability.message',
         'This Windows game will run using a compatibility layer. You might encounter some issues or the game might not work at all.'
       ),
       title: t('infobox.warning', 'Warning'),
+      className: 'compatibility-warning',
       buttons: [
         {
           text: t('gamepage:box.dont-show-again', "Don't show again"),
@@ -272,7 +275,7 @@ const updateGame = async (gameInfo: GameInfo) => {
       .tokens
   let siweValues = undefined
   if (channelRequiresTokens) {
-    siweValues = await signSiweMessage()
+    siweValues = await window.api.requestSIWE()
   }
   return gameUpdateState.updateGame({ ...gameInfo, siweValues })
 }
@@ -283,47 +286,3 @@ export const sideloadedCategories = ['all', 'sideload']
 export const hyperPlayCategories = ['all', 'hyperplay']
 
 export { install, launch, repair, updateGame }
-
-export async function signSiweMessage(): Promise<SiweValues> {
-  const signer = await getSigner()
-  const address = await signer.getAddress()
-
-  const siweMessage = await createSiweMessage(address)
-  const message = siweMessage.prepareMessage()
-  const signature = await signer.signMessage(message)
-
-  return {
-    message,
-    signature,
-    address
-  }
-}
-
-export async function getSigner(): Promise<ethers.Signer> {
-  if (!window.ethereum) throw new Error('Ethereum provider not found')
-  const provider = new ethers.BrowserProvider(window.ethereum)
-  return provider.getSigner()
-}
-
-export async function createSiweMessage(
-  signerAddress: string
-): Promise<SiweMessage> {
-  const domain = window.location.host ? window.location.host : 'hyperplay'
-  const origin = window.location.origin.startsWith('file://')
-    ? 'file://hyperplay'
-    : window.location.origin
-
-  const statementRes = await axios.get(
-    valistBaseApiUrlv1 + '/license_contracts/validate/get-nonce'
-  )
-  const statement = String(statementRes?.data)
-
-  return new SiweMessage({
-    domain,
-    address: signerAddress,
-    statement,
-    uri: origin,
-    version: '1',
-    chainId: 1
-  })
-}

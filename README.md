@@ -11,6 +11,7 @@
       - [Other Distributions (TAR.XZ)](#other-distributions-tarxz)
     - [Windows](#windows)
     - [macOS](#macos)
+  - [Contributing](#contributing)
   - [Credits](#credits)
 
 ## Supported Operating Systems
@@ -68,14 +69,49 @@ Download HyperPlay-x.x.x.dmg and move the HyperPlay App to the Applications fold
 <img width="1840" alt="Hyperplay wallet signature during game" src="https://github.com/HyperPlay-Gaming/hyperplay-desktop-client/assets/38574891/a56d34c6-f1a8-46dc-9a18-5e0c6035e468">
 <img width="1840" alt="Hyperplay game detail page" src="https://github.com/HyperPlay-Gaming/hyperplay-desktop-client/assets/38574891/a4a2ffe9-2e2a-4f88-be34-8903d900385b">
 
+## Contributing
+
+Read our [Contribution License Agreement](https://github.com/HyperPlay-Gaming/hyperplay-desktop-client/blob/main/doc/cla.md).
+
 ### Local Development
 
-This projects uses submodules, so you need to clone it with the `--recurse-submodules` flag or run `git submodule update --init --recursive` after cloning.
+This projects uses optional NPM packages.
+
+For internal developers, use:
 
 ```bash
-yarn setup
-yarn start
+pnpm run setup
+pnpm start
 ```
+
+For external developers, use:
+
+```bash
+pnpm run setupWithoutOptional
+pnpm start
+```
+
+#### M1/M2 Mac
+
+If you are using an M1 or M2 Mac and receive the following error message:
+
+```
+Error: Cannot find module @rollup/rollup-darwin-arm64. npm has a bug related to optional dependencies (https://github.com/npm/cli/issues/4828). Please try `npm i` again after removing both package-lock.json and node_modules directory.
+```
+
+Please try the following
+
+```bash
+rm -f pnpm-lock.yaml
+rm -rf node_modules
+pnpm cache delete
+pnpm run setupWithoutOptional
+pnpm start
+```
+
+#### Lavamoat
+
+Please note that at times, the console may alert you to run `pnpm exec allow-scripts auto`. This is from `@lavamoat/allow-scripts` and is due to a dependency adding a new preinstall or postinstall script. After running `pnpm exec allow-scripts auto` and updating the package.json to enable or disable the script, please run `pnpm run setup` or `pnpm run setupWithoutOptional` again.
 
 ## Credits
 

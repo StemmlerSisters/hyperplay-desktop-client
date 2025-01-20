@@ -9,7 +9,8 @@
         "stopInstall": {
             "message": "Gusto mo bang PANATILIHAN ang mga na-download na file?",
             "title": "Ihinto ang Pag-install",
-            "keepInstalling": "Panatilihin ang Pag-install"
+            "keepInstalling": "Panatilihin ang Pag-install",
+            "keepFilesMessage": "Suriin dito kung nais mong panatilihin ang mga file ng download pagkatapos kanselahin."
         },
         "uninstall": {
             "message": "Gusto mo bang i-uninstall ang larong ito?",
@@ -41,10 +42,21 @@
         },
         "update": {
             "message": "Ang larong ito ay may update, ilapat ang update ngayon?",
-            "title": "Kailangan ng Pag-update ng Laro"
+            "title": "Kailangan ng Pag-update ng Laro",
+            "message-cancel": "Hindi posible na laruin ang larong ito nang hindi ina-update"
         },
         "wineprefix": "Piliin ang WinePrefix Folder",
-        "yes": "OO"
+        "yes": "OO",
+        "ok": "Sige",
+        "dont-show-again": "Huwag ipakita ang edad",
+        "aware": "Alam ko",
+        "compability": {
+            "message": "Ang larong ito sa Windows ay tatakbo gamit ang isang compatibility layer. Maaaring makatagpo ka ng ilang isyu o maaaring hindi gumana ang laro."
+        },
+        "yesCancel": "Oo, kanselahin",
+        "stopExtraction": {
+            "title": "Gusto mo bang kanselahin ang Extraction?"
+        }
     },
     "cloud_save_unsupported": "Hindi suportado",
     "disabled": "Hindi pinagana",
@@ -64,7 +76,8 @@
         "platform": "Piliin ang Bersyon ng Platform na I-install",
         "requirements": "Pangangailangan sa System",
         "totalPlayed": "Time Played",
-        "dlcs": "Mga DLC"
+        "dlcs": "Mga DLC",
+        "selectChannelName": "Pumili ng Pangalan ng Channel"
     },
     "how-long-to-beat": {
         "completionist": "Completionist",
@@ -80,7 +93,8 @@
         "launching": "Paglulunsad",
         "playing": {
             "start": "Maglaro Ngayon",
-            "stop": "Naglalaro (Stop)"
+            "stop": "Naglalaro (Stop)",
+            "update": "I-update"
         },
         "saves": {
             "syncing": "Sini-sync ang mga pag-save"
@@ -111,7 +125,10 @@
         "updating": "Pag-update ng Laro",
         "clickToUpdate": "I-click upang I-update",
         "downloading": "Nagda-download",
-        "extracting": "Pag-extract",
+        "extracting": {
+            "progress": "Pag-extract",
+            "cancel": "Kanselahin ang Extraction"
+        },
         "gameNotAvailable": "Hindi available ang laro",
         "hasUpdates": "Available ang Bagong Bersyon!",
         "installed": "Naka-install",
@@ -121,7 +138,11 @@
         "moving-files": "Inilipat ang file na '{{file}}': {{percent}} ",
         "notinstalled": "Ang larong ito ay hindi naka-install",
         "gog-goodie": "Mukhang hindi mai-install ang larong ito. Tingnan ang nada-download na nilalaman sa https://gog.com/account",
-        "goodie": "Hindi mai-install"
+        "goodie": "Hindi mai-install",
+        "paused": "Sandaling Nakahinto",
+        "distributables": "Nag-iinstall ng mga Distributables",
+        "patching": "Pag-patch ng mga File ",
+        "preparing": "Naghahanda ng Download, pakihintay"
     },
     "submenu": {
         "addShortcut": "Magdagdag ng shortcut",
@@ -136,7 +157,8 @@
         "removeShortcut": "Alisin ang mga shortcut",
         "settings": "Mga setting",
         "store": "Pahina ng Tindahan",
-        "verify": "I-verify at Ayusin"
+        "verify": "I-verify at Ayusin",
+        "extraInfo": "Karagdagang Impormasyon"
     },
     "button": {
         "add_to_favourites": "Idagdag sa mga Paborito",
@@ -151,7 +173,9 @@
         "install": "I-install",
         "no-path-selected": "Walang napiling landas",
         "queue": {
-            "remove": "Alisin sa Queue"
+            "remove": "Alisin sa Queue",
+            "cancel": "Ikansela ang pag-download",
+            "continue": "Magpatuloy sa Pag-download"
         },
         "remove_from_favourites": "Alisin sa Mga Paborito",
         "remove_from_recent": "Alisin Mula sa Kamakailan",
@@ -162,7 +186,10 @@
         },
         "unhide_game": "I-unhide ang Laro",
         "uninstall": "I-uninstall",
-        "update": "Update"
+        "update": "Update",
+        "favorites": "Mga paborito",
+        "remove_from_library": "Tanggalin",
+        "unfavorites": "Huwag itangi"
     },
     "gamecard": {
         "moving": "Gumagalaw",
@@ -189,7 +216,8 @@
         "syncsaves": "Sync Saves",
         "version": "Bersyon",
         "protondb-compatibility-info": "Proton Compatibility Tier",
-        "steamdeck-compatibility-info": "SteamDeck Compatibility"
+        "steamdeck-compatibility-info": "SteamDeck Compatibility",
+        "web3-supported": "May mga tampok na Web3"
     },
     "install": {
         "disk-space-left": "Magagamit na espasyo",
@@ -198,7 +226,8 @@
         "path-not-writtable": "Babala: maaaring hindi maisulat ang path.",
         "space-after-install": "Pagkatapos ng Pag-install",
         "wineprefix": "WinePfix",
-        "wineversion": "Bersyon ng alak"
+        "wineversion": "Bersyon ng alak",
+        "compatibility-warning": "Ang larong ito sa Windows ay tatakbo gamit ang isang compatibility layer. Maaaring mag-iba ang iyong karanasan."
     },
     "report_problem": "Mag-ulat ng problema sa pagpapatakbo ng larong ito",
     "sdl": {
@@ -216,7 +245,8 @@
             "exe": "Piliin ang Executable",
             "image": "Larawan ng App",
             "title": "Pamagat ng Laro/App",
-            "broser": "BrowserURL"
+            "broser": "BrowserURL",
+            "supports-web3": "Ang larong ito ay may mga tampok na Web3"
         },
         "placeholder": {
             "image": "Mag-paste ng URL ng Larawan dito",
@@ -227,5 +257,10 @@
     "specs": {
         "minimum": "pinakamababa",
         "recommended": "Inirerekomenda"
+    },
+    "method": {
+        "getInstallInfo": {
+            "error": "Mangyaring makipag-ugnayan sa HyperPlay Team gamit ang mensaheng ito: {{error}} - {{context}}."
+        }
     }
 }

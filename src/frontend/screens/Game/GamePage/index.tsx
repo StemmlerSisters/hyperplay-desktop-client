@@ -1,6 +1,6 @@
 import './index.scss'
 
-import React, { useContext, useEffect, useState } from 'react'
+import React, { useContext, useEffect, useRef, useState } from 'react'
 
 import {
   BackArrowOutlinedCircled,
@@ -21,6 +21,8 @@ import { NavLink, useLocation, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import ContextProvider from 'frontend/state/ContextProvider'
 import { UpdateComponent, SelectField } from 'frontend/components/UI'
+import walletStore from 'frontend/state/WalletState'
+import onboardingStore from 'frontend/store/OnboardingStore'
 
 import {
   AppPlatforms,
@@ -29,7 +31,8 @@ import {
   HyperPlayInstallInfo,
   InstallProgress,
   Runner,
-  WineInstallation
+  WineInstallation,
+  GamePageActions
 } from 'common/types'
 import { LegendaryInstallInfo } from 'common/types/legendary'
 import { GogInstallInfo } from 'common/types/gog'
@@ -67,15 +70,22 @@ import DMQueueState from 'frontend/state/DMQueueState'
 import { useEstimatedUncompressedSize } from 'frontend/hooks/useEstimatedUncompressedSize'
 import authState from 'frontend/state/authState'
 
+type locationState = {
+  fromDM?: boolean
+  gameInfo: GameInfo
+  fromQuests?: boolean
+  action: GamePageActions
+}
+
 export default observer(function GamePage(): JSX.Element | null {
   const { appName, runner } = useParams() as { appName: string; runner: Runner }
   const location = useLocation() as {
-    state: { fromDM: boolean; gameInfo: GameInfo }
+    state: locationState
   }
   const { t } = useTranslation('gamepage')
   const { t: t2 } = useTranslation()
 
-  const { gameInfo: locationGameInfo } = location.state
+  const { gameInfo: locationGameInfo, action } = location.state
 
   const [showModal, setShowModal] = useState({ game: '', show: false })
 
@@ -92,7 +102,7 @@ export default observer(function GamePage(): JSX.Element | null {
   const { status, folder } = hasStatus(appName, gameInfo)
   const gameAvailable = gameInfo.is_installed && status !== 'notAvailable'
 
-  const [progress, previousProgress] = hasProgress(appName)
+  const { progress, previousProgress } = hasProgress(appName)
 
   const [extraInfo, setExtraInfo] = useState<ExtraInfo | null>(null)
   const [autoSyncSaves, setAutoSyncSaves] = useState(false)
@@ -118,7 +128,7 @@ export default observer(function GamePage(): JSX.Element | null {
 
   const isInstalling = DMQueueState.isInstalling(appName)
   const isPlaying = status === 'playing'
-  const isUpdating = status === 'updating'
+  const isUpdating = status === 'updating' || status === 'patching'
   const isQueued = status === 'queued'
   const isReparing = status === 'repairing'
   const isMoving = status === 'moving'
@@ -126,6 +136,7 @@ export default observer(function GamePage(): JSX.Element | null {
   const isSyncing = status === 'syncing-saves'
   const isPaused = DMQueueState.isPaused(appName)
   const isExtracting = status === 'extracting'
+  const isPatching = status === 'patching'
   const isInstallingDistributable = status === 'distributables'
   const isPreparing = status === 'preparing'
   const notAvailable = !gameAvailable && gameInfo.is_installed
@@ -134,8 +145,12 @@ export default observer(function GamePage(): JSX.Element | null {
   const notSupportedGame =
     gameInfo.runner !== 'sideload' && gameInfo.thirdPartyManagedApp === 'Origin'
   const isOffline = connectivity.status !== 'online'
+  const installPlatform = gameInfo.install?.platform
+  const isBrowserGame =
+    installPlatform === 'Browser' || installPlatform === 'web'
+  const showProgress = isInstalling || isUpdating || isPatching
 
-  const backRoute = location.state?.fromDM ? '/download-manager' : '/library'
+  const backRoute = getBackRoute(location.state)
 
   const storage: Storage = window.localStorage
 
@@ -144,6 +159,29 @@ export default observer(function GamePage(): JSX.Element | null {
     gameInstallInfo?.manifest?.disk_size || 0,
     gameInstallInfo?.manifest?.download_size || 0
   )
+
+  const hasRun = useRef(false)
+  useEffect(() => {
+    const mainAction = async () => {
+      if (!action || hasRun.current) return
+      hasRun.current = true
+
+      if (action === 'update') {
+        return updateGame(gameInfo)
+      }
+      if (action === 'install') {
+        return setShowModal({ game: appName, show: true })
+      }
+      if (action === 'launch') {
+        if (isBrowserGame || gameInfo.is_installed) {
+          handlePlay()()
+        } else {
+          return setShowModal({ game: appName, show: true })
+        }
+      }
+    }
+    mainAction()
+  }, [action])
 
   // Track the screen view once each time the appName, gameInfo or runner changes
   useEffect(() => {
@@ -216,7 +254,7 @@ export default observer(function GamePage(): JSX.Element | null {
           !notInstallable &&
           !isOffline
         ) {
-          getInstallInfo(appName, runner, installPlatform)
+          getInstallInfo(appName, runner, installPlatform, channelName)
             .then((info) => {
               if (!info) {
                 throw 'Cannot get game info'
@@ -224,9 +262,14 @@ export default observer(function GamePage(): JSX.Element | null {
               setGameInstallInfo(info)
             })
             .catch((error) => {
-              console.error(error)
-              window.api.logError(`${`${error}`}`)
-              setHasError({ error: true, message: `${error}` })
+              const errorMessage = t('method.getInstallInfo.error', {
+                defaultValue: `Please contact the HyperPlay Team with this message: {{error}} - {{context}}.`,
+                error: error,
+                context: `ProjectID: ${appName} | Runner: ${runner} | Install Platform: ${installPlatform} | Channel: ${channelName} | Screen: Game Page | Method: getInstallInfo`
+              })
+              console.error(errorMessage)
+              window.api.logError(errorMessage)
+              setHasError({ error: true, message: errorMessage })
             })
         }
 
@@ -317,7 +360,6 @@ export default observer(function GamePage(): JSX.Element | null {
     const isLinux = ['linux', 'linux_amd64', 'linux_arm64']
     const isMacNative = isMac.includes(installPlatform ?? '')
     const isLinuxNative = isLinux.includes(installPlatform ?? '')
-    const isBrowserGame = gameInfo.browserUrl
     const isNative = isWin || isMacNative || isLinuxNative || isBrowserGame
     const isHyperPlayGame = runner === 'hyperplay'
 
@@ -425,7 +467,7 @@ export default observer(function GamePage(): JSX.Element | null {
                     }
                     runner={gameInfo.runner}
                     handleUpdate={async () => updateGame(gameInfo)}
-                    disableUpdate={isInstalling || isUpdating}
+                    disableUpdate={showProgress}
                     setShowExtraInfo={setShowExtraInfo}
                     onShowRequirements={
                       hasRequirements
@@ -551,18 +593,14 @@ export default observer(function GamePage(): JSX.Element | null {
                       )}
                     </>
                   )}
-                  <TimeContainer runner={runner} game={appName} />
+                  <TimeContainer
+                    runner={runner}
+                    game={appName}
+                    status={status}
+                  />
                 </div>
               </div>
               <div className="gameStatus">
-                {isInstalling ||
-                  (isUpdating && (
-                    <progress
-                      className="installProgress"
-                      max={100}
-                      value={getProgress(progress)}
-                    />
-                  ))}
                 <p
                   style={{
                     color:
@@ -770,12 +808,15 @@ export default observer(function GamePage(): JSX.Element | null {
 
     const currentProgress = getCurrentProgress(progress, percent, bytes, eta)
 
-    if (isUpdating && is_installed) {
+    if (isPatching || (isUpdating && is_installed)) {
       if (!currentProgress) {
         return `${t('status.processing', 'Processing files, please wait')}...`
       }
       if (eta && eta.includes('verifying')) {
         return `${t('status.reparing')}: ${percent} [${bytes}]`
+      }
+      if (isPatching) {
+        return `${t('status.patching', 'Patching Files ')} ${currentProgress}`
       }
       return `${t('status.updating')} ${currentProgress}`
     }
@@ -867,6 +908,15 @@ export default observer(function GamePage(): JSX.Element | null {
         return window.api.kill(appName, gameInfo.runner)
       }
 
+      // ask to connect the wallet if its a web3 game
+      if (gameInfo.web3?.supported && !walletStore.isConnected) {
+        try {
+          await onboardingStore.startOnboarding()
+        } catch (e) {
+          console.error('User denied onboarding')
+        }
+      }
+
       // open game
       await launch({
         appName,
@@ -925,6 +975,7 @@ export default observer(function GamePage(): JSX.Element | null {
     })
   }
 })
+
 function getCurrentProgress(
   progress: InstallProgress,
   percent: number | undefined,
@@ -939,7 +990,22 @@ function getCurrentProgress(
     ? ''
     : `${
         percent && bytes
-          ? `${percent.toFixed(2)}% [${bytes} MB]  ${eta ? `ETA: ${eta}` : ''}`
+          ? `${percent.toFixed(2)}% [${Number(bytes).toFixed(2)} MB]  ${
+              eta ? `ETA: ${eta}` : ''
+            }`
           : '...'
       }`
+}
+
+function getBackRoute(locationState?: locationState) {
+  if (!locationState) {
+    return '/library'
+  }
+  if (locationState.fromDM) {
+    return '/download-manager'
+  }
+  if (locationState.fromQuests) {
+    return '/quests'
+  }
+  return '/library'
 }

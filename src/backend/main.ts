@@ -22,7 +22,7 @@ import {
   screen,
   session
 } from 'electron'
-import 'backend/updater'
+import { uuid } from 'short-uuid'
 import { autoUpdater } from 'electron-updater'
 import { cpus, platform } from 'os'
 import {
@@ -35,10 +35,9 @@ import {
   watch,
   writeFileSync
 } from 'graceful-fs'
-import * as LDElectron from 'launchdarkly-electron-client-sdk'
 import Backend from 'i18next-fs-backend'
 import i18next from 'i18next'
-import { DXVK, Winetricks } from './tools'
+import { DXVK, SteamWindows, Winetricks } from './tools'
 import { GameConfig } from './game_config'
 import { GlobalConfig } from './config'
 import { LegendaryUser } from 'backend/storeManagers/legendary/user'
@@ -47,22 +46,17 @@ import setup from './storeManagers/gog/setup'
 import {
   clearCache,
   execAsync,
-  getGOGdlBin,
-  getLegendaryBin,
   getPlatformName,
   getStoreName,
   isEpicServiceOffline,
   handleExit,
-  checkRosettaInstall,
   openUrlOrFile,
   resetApp,
-  setGPTKDefaultOnMacOS,
   showAboutWindow,
   showItemInFolder,
   wait,
   getShellPath,
-  checkWineBeforeLaunch,
-  downloadDefaultWine
+  writeConfig
 } from './utils'
 import {
   configPath,
@@ -82,7 +76,6 @@ import {
   isCLIFullscreen,
   isCLINoGui,
   isFlatpak,
-  isMac,
   isSteamDeckGameMode,
   onboardLocalStore,
   publicDir,
@@ -99,7 +92,6 @@ import {
 import { handleOtp, handleProtocol } from './protocol'
 import {
   initLogger,
-  logChangedSetting,
   logError,
   logInfo,
   LogPrefix,
@@ -138,7 +130,7 @@ import {
 } from 'backend/storeManagers/gog/games'
 import { playtimeSyncQueue } from './storeManagers/gog/electronStores'
 import * as LegendaryLibraryManager from 'backend/storeManagers/legendary/library'
-
+import { getFlag, initLDClient } from './flags/flags'
 import {
   autoUpdate,
   gameManagerMap,
@@ -151,6 +143,15 @@ import { legendarySetup } from 'backend/storeManagers/legendary/setup'
 import * as Sentry from '@sentry/electron'
 import { DEV_PORTAL_URL, devSentryDsn, prodSentryDsn } from 'common/constants'
 import { getHpOverlay, initOverlay } from './overlay'
+
+import { initExtension } from './extension/importer'
+import { hpApi } from './utils/hyperplay_api'
+import {
+  initializeCompatibilityLayer,
+  checkWineBeforeLaunch,
+  runWineCommandOnGame
+} from './utils/compatibility_layers'
+import { isClientUpdating } from 'backend/updater'
 
 /*
  * INSERT OTHER IPC HANDLERS HERE
@@ -167,7 +168,7 @@ import './wiki_game_info/ipc_handler'
 import './recent_games/ipc_handler'
 import './metrics/ipc_handler'
 import 'backend/extension/provider'
-import 'backend/proxy/ipcHandlers.ts'
+import 'backend/proxy/ipcHandlers'
 
 import './ipcHandlers'
 import './ipcHandlers/checkDiskSpace'
@@ -181,8 +182,13 @@ import 'backend/ipcHandlers/quests'
 import 'backend/ipcHandlers/achievements'
 import 'backend/utils/auto_launch'
 import { hrtime } from 'process'
-import { getHyperPlayReleaseObject } from './storeManagers/hyperplay/utils'
-import { postPlaySessionTime } from './utils/quests'
+import {
+  getEpicListingUrl,
+  getHyperPlayReleaseObject
+} from './storeManagers/hyperplay/utils'
+import { checkG7ConnectionStatus, postPlaySessionTime } from './utils/quests'
+
+import { gameIsEpicForwarderOnHyperPlay } from './utils/shouldOpenOverlay'
 
 async function startProxyServer() {
   try {
@@ -216,13 +222,9 @@ import {
   getGameOverride,
   getGameSdl
 } from 'backend/storeManagers/legendary/library'
-import { uuid } from 'short-uuid'
-import { LDEnvironmentId, ldOptions } from './ldconstants'
 import getPartitionCookies from './utils/get_partition_cookies'
-import { runWineCommandOnGame } from 'backend/storeManagers/hyperplay/games'
-import { formatSystemInfo, getSystemInfo } from './utils/systeminfo'
 
-let ldMainClient: LDElectron.LDElectronMainClient
+import { formatSystemInfo, getSystemInfo } from './utils/systeminfo'
 
 if (!app.isPackaged || process.env.DEBUG_HYPERPLAY === 'true') {
   app.commandLine?.appendSwitch('remote-debugging-port', '9222')
@@ -254,15 +256,24 @@ ipcMain.on('focusMainWindow', () => {
 })
 
 async function completeHyperPlayQuest() {
-  const completeHpSummonQuestIsActive = ldMainClient.variation(
+  const completeHpSummonQuestIsActive = getFlag(
     'complete-hp-summon-quest',
     false
   )
+
   if (!completeHpSummonQuestIsActive) {
     return
   }
-  logInfo('Completing HyperPlay Quest', LogPrefix.Backend)
+  logInfo('Completing HyperPlay Quest', LogPrefix.HyperPlay)
   try {
+    const isConnected = await checkG7ConnectionStatus()
+    if (!isConnected) {
+      logInfo(
+        'HyperPlay account is not connected to Game7 Account',
+        LogPrefix.HyperPlay
+      )
+    }
+
     const cookieString = await getPartitionCookies({
       partition: 'persist:auth',
       url: DEV_PORTAL_URL
@@ -281,7 +292,7 @@ async function completeHyperPlayQuest() {
         `Failed to complete summon task: ${
           error?.message ?? response.statusText
         }`,
-        LogPrefix.Backend
+        LogPrefix.HyperPlay
       )
       trackEvent({
         event: 'HyperPlay Summon Quest Failed'
@@ -370,11 +381,15 @@ const loadMainWindowURL = function () {
   } else {
     Menu.setApplicationMenu(null)
     mainWindow.loadURL(prodAppUrl)
-    autoUpdater.checkForUpdates().then((val) => {
-      logInfo(
-        `Auto Updater found version: ${val?.updateInfo.version} released on ${val?.updateInfo.releaseDate} with name ${val?.updateInfo.releaseName}`
-      )
-    })
+    const appSettings = configStore.get_nodefault('settings')
+    const shouldCheckForUpdates = appSettings?.checkForUpdatesOnStartup === true
+    if (shouldCheckForUpdates) {
+      autoUpdater.checkForUpdates().then((val) => {
+        logInfo(
+          `Auto Updater found version: ${val?.updateInfo.version} released on ${val?.updateInfo.releaseDate} with name ${val?.updateInfo.releaseName}`
+        )
+      })
+    }
   }
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -420,7 +435,7 @@ if (!gotTheLock) {
     // Someone tried to run a second instance, we should focus the overlay or the main window if no overlay is running.
     const hpOverlay = await getHpOverlay()
     if (hpOverlay?.overlayIsRunning()) {
-      hpOverlay.toggleOverlay({ action: 'ON' })
+      hpOverlay.toggleOverlay({ action: 'ON', actionCause: 'AUTOMATED' })
     } else {
       const mainWindow = getMainWindow()
       mainWindow?.show()
@@ -457,11 +472,16 @@ if (!gotTheLock) {
     epicStoreSession.setPreloads([
       path.join(__dirname, '../preload/webview_style_preload.js')
     ])
+    const g7PortalSession = session.fromPartition('persist:g7portal')
+    g7PortalSession.setPreloads([
+      path.join(__dirname, '../preload/hyperplay_store_preload.js'),
+      path.join(__dirname, '../preload/providerPreload.js')
+    ])
 
     // keyboards with alt and no option key can be used with mac so register both
     const hpOverlay = await getHpOverlay()
-    const toggle =
-      hpOverlay?.toggleOverlay ??
+    const toggle = () =>
+      hpOverlay?.toggleOverlay({ action: 'TOGGLE', actionCause: 'HOTKEY' }) ??
       (() =>
         logInfo(
           'Cannot toggle overlay without @hyperplay/overlay package',
@@ -472,25 +492,10 @@ if (!gotTheLock) {
     const openOverlayAcceleratorMac = 'Option+X'
     globalShortcut.register(openOverlayAcceleratorMac, toggle)
 
-    initExtension(hpApi)
     initOverlay(hpApi)
-
     initOnlineMonitor()
 
     initImagesCache()
-
-    logInfo(
-      ['Legendary location:', join(...Object.values(getLegendaryBin()))],
-      LogPrefix.Legendary
-    )
-    logInfo(
-      ['GOGDL location:', join(...Object.values(getGOGdlBin()))],
-      LogPrefix.Gog
-    )
-    logInfo(
-      ['GOGDL location:', join(...Object.values(getGOGdlBin()))],
-      LogPrefix.Gog
-    )
 
     // TODO: Remove this after a couple of stable releases
     // Affects only current users, not new installs
@@ -505,10 +510,6 @@ if (!gotTheLock) {
       const isLoggedIn = LegendaryUser.isLoggedIn()
 
       if (!isLoggedIn) {
-        logInfo('User Not Found, removing it from Store', {
-          prefix: LogPrefix.Backend,
-          forceLog: true
-        })
         configStore.delete('userInfo')
       }
 
@@ -590,15 +591,7 @@ if (!gotTheLock) {
       configStore.set('settings.ldUser', ldUser)
     }
 
-    ldMainClient = LDElectron.initializeInMain(
-      LDEnvironmentId,
-      ldUser,
-      ldOptions
-    )
-
-    ldMainClient.on('ready', () => {
-      logInfo('LaunchDarkly client initialized', LogPrefix.Backend)
-    })
+    initLDClient(ldUser)
 
     const mainWindow = await initializeWindow()
 
@@ -643,21 +636,10 @@ if (!gotTheLock) {
       }, 10000)
     }
 
-    // Will download Wine if none was found
-    const availableWine = (await GlobalConfig.get().getAlternativeWine()) || []
-    const toolkitDownloaded = availableWine.some(
-      (wine) => wine.type === 'toolkit'
-    )
-    const shouldDownloadWine =
-      !availableWine.length || (isMac && !toolkitDownloaded)
-
-    Promise.all([
-      DXVK.getLatest(),
-      Winetricks.download(),
-      shouldDownloadWine ? downloadDefaultWine() : null,
-      isMac && checkRosettaInstall(),
-      isMac && !shouldDownloadWine && setGPTKDefaultOnMacOS()
-    ])
+    // Setup the compatibility layer if not on Windows
+    if (!isWindows) {
+      initializeCompatibilityLayer()
+    }
 
     // set initial zoom level after a moment, if set in sync the value stays as 1
     setTimeout(() => {
@@ -676,6 +658,16 @@ if (!gotTheLock) {
 
     initTrayIcon(mainWindow)
 
+    // Call checkGameUpdates for HyperPlay games every hour
+    const checkGameUpdatesInterval = 1 * 60 * 60 * 1000
+    setInterval(async () => {
+      try {
+        await checkGameUpdates(['hyperplay'])
+      } catch (error) {
+        logError(`Error checking game updates: ${error}`, LogPrefix.Backend)
+      }
+    }, checkGameUpdatesInterval)
+
     return
   })
 }
@@ -686,8 +678,10 @@ ipcMain.once('loadingScreenReady', () => {
   logInfo('Loading Screen Ready', LogPrefix.Backend)
 })
 
-ipcMain.once('frontendReady', () => {
+ipcMain.once('frontendReady', async () => {
   logInfo('Frontend Ready', LogPrefix.Backend)
+  await initExtension(hpApi)
+  ipcMain.emit('reloadApp')
   handleProtocol([openUrlArgument, ...process.argv])
   setTimeout(() => {
     logInfo('Starting the Download Queue', LogPrefix.Backend)
@@ -821,29 +815,35 @@ ipcMain.handle('runWineCommand', async (e, args) => runWineCommand(args))
 
 /// IPC handlers begin here.
 
+async function checkGameUpdates(runners: Runner[]): Promise<string[]> {
+  let oldGames: string[] = []
+  const { autoUpdateGames } = GlobalConfig.get().getSettings()
+  for (const runner of runners) {
+    let gamesToUpdate = await libraryManagerMap[runner].listUpdateableGames()
+    if (autoUpdateGames) {
+      gamesToUpdate = await autoUpdate(runner as Runner, gamesToUpdate)
+    }
+    oldGames = [...oldGames, ...gamesToUpdate]
+  }
+
+  sendGameUpdatesNotifications().catch((e) =>
+    logError(
+      `Something went wrong sending update notifications: ${e}`,
+      LogPrefix.Backend
+    )
+  )
+
+  return oldGames
+}
+
 ipcMain.handle(
   'checkGameUpdates',
   async (e, runners: Runner[]): Promise<string[]> => {
-    let oldGames: string[] = []
-    const { autoUpdateGames } = GlobalConfig.get().getSettings()
-    for (const runner of runners) {
-      let gamesToUpdate = await libraryManagerMap[runner].listUpdateableGames()
-      if (autoUpdateGames) {
-        gamesToUpdate = await autoUpdate(runner as Runner, gamesToUpdate)
-      }
-      oldGames = [...oldGames, ...gamesToUpdate]
-    }
-
-    sendGameUpdatesNotifications().catch((e) =>
-      logError(
-        `Something went wrong sending update notifications: ${e}`,
-        LogPrefix.Backend
-      )
-    )
-
-    return oldGames
+    return checkGameUpdates(runners)
   }
 )
+
+ipcMain.handle('requestSIWE', HyperPlayGameManager.requestSIWE)
 
 ipcMain.handle('getEpicGamesStatus', async () => isEpicServiceOffline())
 
@@ -900,8 +900,12 @@ ipcMain.handle('appIsInLibrary', async (event, appName, runner) => {
   return HyperPlayGameManager.appIsInLibrary(appName)
 })
 
-ipcMain.on('goToGamePage', async (event, appName) => {
-  return sendFrontendMessage('goToGamePage', appName)
+ipcMain.on('goToGamePage', async (event, gameId, action) => {
+  return sendFrontendMessage('goToGamePage', gameId, action)
+})
+
+ipcMain.on('navigate', async (event, appName) => {
+  return sendFrontendMessage('navigate', appName)
 })
 
 ipcMain.handle('getGameInfo', async (event, appName, runner) => {
@@ -1057,31 +1061,9 @@ ipcMain.on('toggleVKD3D', (event, { appName, action }) => {
     })
 })
 
-ipcMain.handle('writeConfig', (event, { appName, config }) => {
-  logInfo(
-    `Writing config for ${appName === 'default' ? 'HyperPlay' : appName}`,
-    LogPrefix.Backend
-  )
-  const oldConfig =
-    appName === 'default'
-      ? GlobalConfig.get().getSettings()
-      : GameConfig.get(appName).config
-
-  // log only the changed setting
-  logChangedSetting(config, oldConfig)
-
-  if (appName === 'default') {
-    GlobalConfig.get().set(config as AppSettings)
-    GlobalConfig.get().flush()
-    const currentConfigStore = configStore.get_nodefault('settings')
-    if (currentConfigStore) {
-      configStore.set('settings', { ...currentConfigStore, ...config })
-    }
-  } else {
-    GameConfig.get(appName).config = config as GameSettings
-    GameConfig.get(appName).flush()
-  }
-})
+ipcMain.handle('writeConfig', (event, { appName, config }) =>
+  writeConfig(appName, config)
+)
 
 ipcMain.on('setSetting', (event, { appName, key, value }) => {
   if (appName === 'default') {
@@ -1110,7 +1092,7 @@ ipcMain.handle('refreshLibrary', async (e, library?) => {
   } else {
     const allRefreshPromises = []
     for (const runner_i in libraryManagerMap) {
-      allRefreshPromises.push(libraryManagerMap[runner_i].refresh())
+      allRefreshPromises.push(libraryManagerMap[runner_i as Runner].refresh())
     }
     await Promise.allSettled(allRefreshPromises)
   }
@@ -1121,6 +1103,66 @@ ipcMain.on('logError', (e, err) => logError(err, LogPrefix.Frontend))
 ipcMain.on('logInfo', (e, info) => logInfo(info, LogPrefix.Frontend))
 
 let powerDisplayId: number | null
+let gamePlaySessionStartTimes: Record<string, bigint> = {}
+
+function startNewPlaySession(appName: string) {
+  const prevStartTime = gamePlaySessionStartTimes[appName]
+  gamePlaySessionStartTimes = {}
+  // Uses hrtime for monotonic timer not subject to clock drift or sync errors
+  const startPlayingTimeMonotonic = hrtime.bigint()
+  gamePlaySessionStartTimes[appName] = startPlayingTimeMonotonic
+  return prevStartTime
+}
+
+async function postPlaySession(
+  appName: string,
+  runner: Runner,
+  sessionPlaytimeInMs: bigint
+) {
+  const game = gameManagerMap[runner].getGameInfo(appName)
+  const { hyperPlayListing } = await gameIsEpicForwarderOnHyperPlay(game)
+  await postPlaySessionTime(
+    hyperPlayListing?.project_id || appName,
+    // round up to prevent session time loss
+    parseInt(((sessionPlaytimeInMs + BigInt(1000)) / BigInt(1000)).toString())
+  )
+}
+
+function syncPlaySession(appName: string) {
+  if (!Object.hasOwn(gamePlaySessionStartTimes, appName)) {
+    return BigInt(0)
+  }
+
+  // reset the time counter and start new session slightly before ending current session to prevent time loss
+  const startPlayingTimeMonotonic = startNewPlaySession(appName)
+  const stopPlayingTimeMonotonic = hrtime.bigint()
+  const sessionPlaytimeInMs =
+    (stopPlayingTimeMonotonic - startPlayingTimeMonotonic) / BigInt(1000000)
+
+  // update local json with time played
+  const sessionPlaytimeInMinutes =
+    sessionPlaytimeInMs / BigInt(1000) / BigInt(60)
+
+  const totalPlaytime =
+    sessionPlaytimeInMinutes + BigInt(tsStore.get(`${appName}.totalPlayed`, 0))
+  tsStore.set(`${appName}.totalPlayed`, Number(totalPlaytime))
+
+  return sessionPlaytimeInMs
+}
+
+ipcMain.handle(
+  'syncPlaySession',
+  async (e, appName: string, runner: Runner) => {
+    const sessionPlaytimeInMs = syncPlaySession(appName)
+    await postPlaySession(appName, runner, sessionPlaytimeInMs)
+  }
+)
+
+ipcMain.handle('isClientUpdating', async () => {
+  return isClientUpdating()
+})
+
+ipcMain.on('restartClient', () => autoUpdater.quitAndInstall())
 
 // get pid/tid on launch and inject
 ipcMain.handle(
@@ -1135,8 +1177,7 @@ ipcMain.handle(
     const { minimizeOnGameLaunch } = GlobalConfig.get().getSettings()
 
     const startPlayingDate = new Date()
-    // Uses hrtime for monotonic timer not subject to clock drift or sync errors
-    const startPlayingTimeMonotonic = hrtime.bigint()
+    startNewPlaySession(appName)
 
     if (!tsStore.has(game.app_name)) {
       tsStore.set(
@@ -1286,22 +1327,6 @@ ipcMain.handle(
     // Update playtime and last played date
     const finishedPlayingDate = new Date()
     tsStore.set(`${appName}.lastPlayed`, finishedPlayingDate.toISOString())
-    // Playtime of this session in minutes. Uses hrtime for monotonic timer not subject to clock drift or sync errors
-    const stopPlayingTimeMonotonic = hrtime.bigint()
-    const sessionPlaytimeInMs =
-      (stopPlayingTimeMonotonic - startPlayingTimeMonotonic) / BigInt(1000000)
-    const sessionPlaytimeInMinutes =
-      sessionPlaytimeInMs / BigInt(1000) / BigInt(60)
-
-    const totalPlaytime =
-      sessionPlaytimeInMinutes +
-      BigInt(tsStore.get(`${appName}.totalPlayed`, 0))
-    tsStore.set(`${appName}.totalPlayed`, Number(totalPlaytime))
-
-    postPlaySessionTime(
-      appName,
-      parseInt((sessionPlaytimeInMs / BigInt(1000)).toString())
-    )
 
     if (runner === 'gog') {
       await updateGOGPlaytime(appName, startPlayingDate, finishedPlayingDate)
@@ -1310,6 +1335,12 @@ ipcMain.handle(
     await addRecentGame(game)
 
     if (autoSyncSaves && isOnline()) {
+      /**
+       * @dev It sets to done, so the GlobalState knows that the game session stopped.
+       * Then it changes the status to syncing-saves. Then It sets to done again.
+       * Otherwise it would count the Syncing Saves time (which can be long depending on the game) as playing time as well.
+       * done is not only the state for stopping playing but for finishing any other process that came before.
+       */
       sendFrontendMessage('gameStatusUpdate', {
         appName,
         runner,
@@ -1320,6 +1351,12 @@ ipcMain.handle(
         appName,
         runner,
         status: 'syncing-saves'
+      })
+
+      sendFrontendMessage('gameStatusUpdate', {
+        appName,
+        runner,
+        status: 'done'
       })
 
       logInfo(`Uploading saves for ${title}`, LogPrefix.Backend)
@@ -1344,6 +1381,10 @@ ipcMain.handle(
       runner,
       status: 'done'
     })
+
+    // Playtime of this session in milliseconds. Uses hrtime for monotonic timer not subject to clock drift or sync errors
+    const sessionPlaytimeInMs = syncPlaySession(appName)
+    postPlaySession(appName, runner, sessionPlaytimeInMs)
 
     trackEvent({
       event: 'Game Closed',
@@ -1927,6 +1968,8 @@ ipcMain.handle('launchApp', async (e, appName, runner) =>
   gameManagerMap[runner].launch(appName)
 )
 
+ipcMain.handle('installSteamWindows', async () => SteamWindows.installSteam())
+
 ipcMain.handle('isNative', (e, { appName, runner }) => {
   return gameManagerMap[runner].isNative(appName)
 })
@@ -1988,6 +2031,10 @@ ipcMain.handle('addHyperplayGame', async (_e, projectId) => {
   await addGameToLibrary(projectId)
 })
 
+ipcMain.handle('getEpicListingUrl', async (_e, projectId) =>
+  getEpicListingUrl(projectId)
+)
+
 ipcMain.handle(
   'isGameHidden',
   async (_e, gameId) =>
@@ -2034,9 +2081,9 @@ ipcMain.on('killOverlay', async () => {
   hpOverlay?.closeOverlay()
 })
 
-ipcMain.on('toggleOverlay', async () => {
+ipcMain.on('toggleOverlay', async (ev, ...args) => {
   const hpOverlay = await getHpOverlay()
-  hpOverlay?.toggleOverlay()
+  hpOverlay?.toggleOverlay(...args)
 })
 
 ipcMain.handle('getHyperPlayListings', async () => {
@@ -2048,5 +2095,3 @@ ipcMain.handle('getHyperPlayListings', async () => {
  */
 
 import './storeManagers/legendary/eos_overlay/ipc_handler'
-import { initExtension } from './extension/importer'
-import { hpApi } from './utils/hyperplay_api'

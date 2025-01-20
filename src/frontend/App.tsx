@@ -38,6 +38,9 @@ import { DeviceStateController } from './state/DeviceState'
 import EmailSubscriptionModal from './components/UI/EmailSubscriptionModal'
 import { UpdateModalController } from './components/UI/UpdateModalController'
 import { QuestsPage } from './screens/Quests'
+import { NavigateListener } from './NavigateListener'
+import G7Webview from './screens/G7Webview'
+import CardPrivacyPolicy from './screens/Onboarding/analytics/CardPrivacyPolicy'
 
 function App() {
   const { sidebarCollapsed, isSettingsModalOpen, connectivity } =
@@ -52,7 +55,9 @@ function App() {
         <TopNavBar />
         <Sidebar />
         <main className="content">
+          <CardPrivacyPolicy />
           <QaAuthHandler />
+          <NavigateListener />
           <ExtensionHandler />
           <ExtensionManager />
           <DialogHandler />
@@ -93,12 +98,13 @@ function App() {
             />
             <Route path="epicstore" element={<WebView key="epicstore" />} />
             <Route path="gogstore" element={<WebView key="gogstore" />} />
-            <Route path="wiki" element={<WebView key="wiki" />} />
+            <Route path="docs" element={<WebView key="docs" />} />
             <Route path="metamaskHome" element={<MetaMaskHome />} />
             <Route
               path="metamaskSnaps"
               element={<WebView key="metamaskSnaps" />}
             />
+            <Route path="game7Portal" element={<G7Webview />} />
             <Route path="metamaskPortfolio" element={<MetaMaskPortfolio />}>
               <Route path=":page" element={<MetaMaskPortfolio />} />
             </Route>
@@ -119,7 +125,9 @@ function App() {
               </Route>
             </Route>
             <Route path="/download-manager" element={<DownloadManager />} />
-            <Route path="/quests" element={<QuestsPage />} />
+            <Route path="/quests" element={<QuestsPage />}>
+              <Route path=":questId" element={<QuestsPage />} />
+            </Route>
           </Routes>
         </main>
         <div className="controller">
